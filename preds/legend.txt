@@ -1,0 +1,5 @@
+ID	Nombre	Color(B,G,R)
+0	Fondo	(0,0,0)
+1	Cuerpo	(0, 255, 0)
+2	Aleta	(255, 0, 0)
+3	Cabeza	(0, 0, 255)

@@ -1,0 +1,11 @@
+__pycache__/
+med/
+*.pyc
+.env
+*.h5
+*.weights
+*.log
+*.pth
+*.png
+*.jpeg
+*.jpg
