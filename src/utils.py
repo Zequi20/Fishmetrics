@@ -206,15 +206,20 @@ def draw_aruco_detection(image_path, detection_result, output_path=None):
         if image is None or not detection_result["detected"]:
             return image
         
-        # Convertir corners de vuelta a numpy array
-        corners = np.array([detection_result["corners"]], dtype=np.float32)
+        # Convertir corners de vuelta a numpy array con el formato correcto
+        # OpenCV espera una lista de arrays con shape (1, 4, 2)
+        corners_data = np.array(detection_result["corners"], dtype=np.float32)
+        corners = [corners_data.reshape(1, 4, 2)]
+        
+        # Crear array de IDs
+        marker_id = detection_result["marker_id"]
+        ids = np.array([[marker_id]], dtype=np.int32)
         
         # Dibujar el marcador
-        cv2.aruco.drawDetectedMarkers(image, corners)
+        cv2.aruco.drawDetectedMarkers(image, corners, ids)
         
         # Dibujar información adicional
         center = tuple(map(int, detection_result["center"]))
-        marker_id = detection_result["marker_id"]
         scale = detection_result["cm_per_pixel"]
         
         # Texto con información
