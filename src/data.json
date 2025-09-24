@@ -1,0 +1,23 @@
+{
+  "camera_matrix": [
+    [1198.6, 0, 640],
+    [0, 1198.6, 480],
+    [0, 0, 1]
+  ],
+  "dist_coeffs": [0, 0, 0, 0, 0],
+  "camera_model": "SIMPLE_PINHOLE",
+  "image_size": [1280, 960],
+  "calibration_parameters": {
+    "fx": 1193.93,
+    "fy": 1194.89,
+    "cx": 800,
+    "cy": 600
+  },
+  "reprojection_error": {
+    "overall_rms": 0.334836,
+    "estimated_std_deviations": [68.618, 71.8811, 0, 0]
+  },
+  "calibration_date": "2025-09-21",
+  "notes": "Calibración de cámara pinhole - RMS error: 0.334836",
+  "distortion_model": "radial_tangential"
+}

@@ -3,6 +3,7 @@ import os
 import sys
 import subprocess
 import numpy as np
+import json
 from pathlib import Path
 
 def draw_text_with_outline(img, text, position, font, font_scale,
@@ -17,10 +18,39 @@ def draw_text_with_outline(img, text, position, font, font_scale,
     cv2.putText(img, text, (x, y), font, font_scale,
                 text_color, thickness, cv2.LINE_AA)
 
-def detect_aruco_marker(image_path, marker_size_mm=100):
+def create_default_calibration_file(filename="camera_calibration.json"):
     """
-    Detecta marcadores ArUco 4x4 en la imagen y calcula la escala.
-    Versión mejorada con mejor configuración de parámetros.
+    Crea un archivo de calibración por defecto.
+    """
+    default_calib = {
+        "camera_matrix": [
+            [1193.93, 0.0, 800.0],
+            [0.0, 1194.89, 600.0],
+            [0.0, 0.0, 1.0]
+        ],
+        "dist_coeffs": [0.1, -0.2, 0.0, 0.0, 0.1],
+        "description": "Parámetros de calibración por defecto - Ajustar según la cámara específica",
+        "notes": [
+            "camera_matrix: Matriz intrínseca 3x3 [fx, 0, cx; 0, fy, cy; 0, 0, 1]",
+            "dist_coeffs: Coeficientes de distorsión [k1, k2, p1, p2, k3]",
+            "fx, fy: Distancias focales en píxeles",
+            "cx, cy: Coordenadas del punto principal",
+            "k1, k2, k3: Coeficientes de distorsión radial",
+            "p1, p2: Coeficientes de distorsión tangencial"
+        ]
+    }
+    
+    with open(filename, 'w') as f:
+        json.dump(default_calib, f, indent=2)
+    
+    print(f"Archivo de calibración por defecto creado: {filename}")
+    return filename
+
+def detect_aruco_marker(image_path, marker_size_mm=25):
+    print(f"MMarker size mm: {marker_size_mm}")
+    """
+    Detecta marcadores ArUco 4x4_50 en la imagen y calcula la escala.
+    Versión corregida para cálculo preciso de escala.
     """
     try:
         # Cargar la imagen
@@ -31,20 +61,20 @@ def detect_aruco_marker(image_path, marker_size_mm=100):
         # Convertir a escala de grises
         gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
         
-        # Crear detector ArUco para 4x4_100 con parámetros optimizados
-        aruco_dict = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_4X4_100)
+        # Crear detector ArUco para 4x4_50 con parámetros optimizados
+        aruco_dict = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_4X4_50)
         parameters = cv2.aruco.DetectorParameters()
         
-        # Ajustar parámetros para mejorar detección
+        # Parámetros optimizados para marcadores pequeños (25mm)
         parameters.adaptiveThreshWinSizeMin = 3
         parameters.adaptiveThreshWinSizeMax = 23
         parameters.adaptiveThreshWinSizeStep = 10
         parameters.adaptiveThreshConstant = 7
         
-        # Parámetros de contorno
-        parameters.minMarkerPerimeterRate = 0.03
+        # Parámetros de contorno más restrictivos para marcadores pequeños
+        parameters.minMarkerPerimeterRate = 0.02  # Más restrictivo
         parameters.maxMarkerPerimeterRate = 4.0
-        parameters.polygonalApproxAccuracyRate = 0.03
+        parameters.polygonalApproxAccuracyRate = 0.05  # Más preciso
         
         # Parámetros de esquinas
         parameters.minCornerDistanceRate = 0.01
@@ -54,11 +84,11 @@ def detect_aruco_marker(image_path, marker_size_mm=100):
         parameters.markerBorderBits = 1
         parameters.minOtsuStdDev = 5.0
         
-        # Refinamiento de esquinas
+        # Refinamiento de esquinas más agresivo
         parameters.cornerRefinementMethod = cv2.aruco.CORNER_REFINE_SUBPIX
-        parameters.cornerRefinementWinSize = 5
-        parameters.cornerRefinementMaxIterations = 30
-        parameters.cornerRefinementMinAccuracy = 0.1
+        parameters.cornerRefinementWinSize = 3  # Ventana más pequeña para marcadores pequeños
+        parameters.cornerRefinementMaxIterations = 50  # Más iteraciones
+        parameters.cornerRefinementMinAccuracy = 0.05  # Mayor precisión
         
         # Crear detector
         detector = cv2.aruco.ArucoDetector(aruco_dict, parameters)
@@ -75,50 +105,55 @@ def detect_aruco_marker(image_path, marker_size_mm=100):
             # Tomar el primer marcador detectado
             marker_corners = corners[0][0]
             
-            # Calcular el tamaño del marcador en píxeles
-            corner1 = marker_corners[0]
-            corner2 = marker_corners[1] 
-            corner3 = marker_corners[2]
-            corner4 = marker_corners[3]
+            # Calcular las distancias entre esquinas adyacentes
+            side1 = np.linalg.norm(marker_corners[1] - marker_corners[0])  # Lado superior
+            side2 = np.linalg.norm(marker_corners[2] - marker_corners[1])  # Lado derecho
+            side3 = np.linalg.norm(marker_corners[3] - marker_corners[2])  # Lado inferior
+            side4 = np.linalg.norm(marker_corners[0] - marker_corners[3])  # Lado izquierdo
             
-            # Calcular las dimensiones del marcador
-            width1 = np.linalg.norm(corner2 - corner1)
-            width2 = np.linalg.norm(corner3 - corner4)
-            height1 = np.linalg.norm(corner4 - corner1)
-            height2 = np.linalg.norm(corner3 - corner2)
+            # Promedio de todos los lados para mayor precisión
+            marker_size_pixels = (side1 + side2 + side3 + side4) / 4
             
-            # Promedio de las medidas para mayor precisión
-            avg_width = (width1 + width2) / 2
-            avg_height = (height1 + height2) / 2
-            marker_size_pixels = (avg_width + avg_height) / 2
-            
-            # Calcular la escala: cm por píxel
-            marker_size_cm = marker_size_mm / 10  # Convertir mm a cm
-            cm_per_pixel = marker_size_cm / marker_size_pixels
+            # Calcular la escala: mm por píxel (más directo)
+            mm_per_pixel = marker_size_mm / marker_size_pixels
+            cm_per_pixel = mm_per_pixel / 10  # Convertir a cm por píxel
+            pixels_per_mm = marker_size_pixels / marker_size_mm
+            pixels_per_cm = pixels_per_mm * 10
             
             # Información adicional
             marker_id = ids[0][0]
             center = np.mean(marker_corners, axis=0)
             
+            # Calcular área y perímetro para verificación
+            area_pixels = cv2.contourArea(marker_corners)
+            perimeter_pixels = cv2.arcLength(marker_corners, True)
+            
             print(f"Marcador ID: {marker_id}")
-            print(f"Tamaño en píxeles: {marker_size_pixels:.2f}")
-            print(f"Escala calculada: {cm_per_pixel:.4f} cm/pixel")
+            print(f"Lados en píxeles: {side1:.2f}, {side2:.2f}, {side3:.2f}, {side4:.2f}")
+            print(f"Tamaño promedio en píxeles: {marker_size_pixels:.2f}")
+            print(f"Escala calculada: {mm_per_pixel:.4f} mm/pixel")
+            print(f"Resolución: {pixels_per_mm:.2f} pixels/mm = {pixels_per_cm:.2f} pixels/cm")
             
             return {
                 "detected": True,
                 "marker_id": int(marker_id),
                 "marker_size_pixels": float(marker_size_pixels),
                 "marker_size_mm": marker_size_mm,
-                "marker_size_cm": marker_size_cm,
+                "marker_size_cm": marker_size_mm / 10,
+                "mm_per_pixel": float(mm_per_pixel),
                 "cm_per_pixel": float(cm_per_pixel),
+                "pixels_per_mm": float(pixels_per_mm),
+                "pixels_per_cm": float(pixels_per_cm),
                 "center": center.tolist(),
                 "corners": marker_corners.tolist(),
-                "pixels_per_cm": float(marker_size_pixels / marker_size_cm)
+                "area_pixels": float(area_pixels),
+                "perimeter_pixels": float(perimeter_pixels),
+                "sides_pixels": [float(side1), float(side2), float(side3), float(side4)]
             }
         else:
             # Intentar con diferentes diccionarios ArUco
             dictionaries_to_try = [
-                cv2.aruco.DICT_4X4_50,
+                cv2.aruco.DICT_4X4_100,
                 cv2.aruco.DICT_4X4_250,
                 cv2.aruco.DICT_4X4_1000,
                 cv2.aruco.DICT_5X5_100,
@@ -134,7 +169,7 @@ def detect_aruco_marker(image_path, marker_size_mm=100):
                     print(f"Marcador detectado con diccionario: {dict_type}")
                     return {
                         "detected": False,
-                        "message": f"Se detectó un marcador pero con diccionario {dict_type}, no 4X4_100. Revisa el tipo de marcador."
+                        "message": f"Se detectó un marcador pero con diccionario {dict_type}, no 4X4_50. Revisa el tipo de marcador."
                     }
             
             return {
@@ -143,7 +178,8 @@ def detect_aruco_marker(image_path, marker_size_mm=100):
                           "1. El marcador sea visible y esté bien iluminado\n" +
                           "2. El marcador no esté distorsionado\n" +
                           "3. El contraste sea suficiente\n" +
-                          "4. El marcador sea del tipo 4X4_100"
+                          "4. El marcador sea del tipo 4X4_50\n" +
+                          "5. El marcador tenga al menos 20-30 píxeles de ancho"
             }
             
     except Exception as e:
