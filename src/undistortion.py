@@ -1,6 +1,7 @@
 import cv2
 import numpy as np
 import json
+import yaml
 import os
 from pathlib import Path
 
@@ -28,7 +29,54 @@ class CameraUndistortion:
         # Coeficientes de distorsión por defecto (ajustables)
         self.default_dist_coeffs = np.array([0.1, -0.2, 0.0, 0.0, 0.1], dtype=np.float32)
     
-    def load_calibration_from_file(self, calibration_file):
+    def load_calibration_from_yaml(self, model, focal_length, principal_point, image_size):
+        """
+        Carga los parámetros de calibración desde un archivo YAML con formato simple.
+        
+        Args:
+            model (str): Modelo de cámara (SIMPLE_PINHOLE)
+            focal_length (float): Distancia focal f
+            principal_point (tuple): Punto principal (cx, cy)
+            image_size (tuple): Dimensiones de la imagen (width, height)
+            
+        Returns:
+            bool: True si la carga fue exitosa, False en caso contrario
+        """
+        try:
+            if model != "SIMPLE_PINHOLE":
+                print(f"Advertencia: Modelo de cámara no soportado: {model}")
+                return False
+                
+            cx, cy = principal_point
+            w, h = image_size
+            
+            # Crear matriz de cámara para el modelo SIMPLE_PINHOLE
+            # En este modelo, fx = fy = f
+            self.camera_matrix = np.array([
+                [focal_length, 0, cx],
+                [0, focal_length, cy],
+                [0, 0, 1]
+            ], dtype=np.float32)
+            
+            # Para un modelo SIMPLE_PINHOLE, no hay distorsión
+            # Si se requiere distorsión, se debería incluir en el YAML
+            self.dist_coeffs = np.zeros(5, dtype=np.float32)  # [k1, k2, p1, p2, k3]
+            
+            self.image_size = (w, h)
+            
+            print(f"Calibración cargada desde YAML")
+            print(f"Modelo: {model}")
+            print(f"Matriz de cámara: \n{self.camera_matrix}")
+            print(f"Coeficientes de distorsión: {self.dist_coeffs}")
+            print(f"Tamaño de imagen: {self.image_size}")
+            
+            return True
+            
+        except Exception as e:
+            print(f"Error al procesar calibración YAML: {e}")
+            return False
+    
+    def load_calibration_from_json(self, calibration_file):
         """
         Carga los parámetros de calibración desde un archivo JSON.
         

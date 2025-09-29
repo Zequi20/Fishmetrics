@@ -1,5 +1,6 @@
 import os
 from tkinter import filedialog, messagebox
+import yaml
 
 class UndistortionHelper:
     def __init__(self, gui):
@@ -25,9 +26,9 @@ class UndistortionHelper:
         self.gui.status_label.config(text=f"Corrección de distorsión {'habilitada' if enabled else 'deshabilitada'}")
     
     def load_calibration(self):
-        """Carga parámetros de calibración desde un archivo."""
+        """Carga parámetros de calibración desde un archivo YAML."""
         file_types = [
-            ("Archivos JSON", "*.json"),
+            ("Archivos YAML", "*.yaml *.yml"),
             ("Todos los archivos", "*.*")
         ]
         
@@ -37,12 +38,42 @@ class UndistortionHelper:
         )
         
         if filename:
-            success = self.gui.undistorter.load_calibration_from_file(filename)
-            if success:
-                self.gui.status_label.config(text=f"Calibración cargada desde {os.path.basename(filename)}")
-                messagebox.showinfo("Éxito", "Calibración cargada correctamente")
-            else:
-                messagebox.showerror("Error", "No se pudo cargar el archivo de calibración")
+            try:
+                with open(filename, 'r') as file:
+                    calibration_data = yaml.safe_load(file)
+                
+                # Extract parameters from YAML
+                model = calibration_data.get('model')
+                parameters = calibration_data.get('parameters', [])
+                width = calibration_data.get('width')
+                height = calibration_data.get('height')
+                
+                if model != "SIMPLE_PINHOLE" or not parameters or len(parameters) < 3:
+                    messagebox.showerror("Error", "Formato de archivo de calibración no válido o incompatible")
+                    return
+                
+                # Extract the camera parameters
+                f = parameters[0]  # focal length
+                cx = parameters[1]  # principal point x
+                cy = parameters[2]  # principal point y
+                
+                # Set undistorter parameters
+                # This requires modification to your undistorter class to accept these parameters
+                success = self.gui.undistorter.load_calibration_from_yaml(
+                    model=model,
+                    focal_length=f,
+                    principal_point=(cx, cy),
+                    image_size=(width, height)
+                )
+                
+                if success:
+                    self.gui.status_label.config(text=f"Calibración YAML cargada desde {os.path.basename(filename)}")
+                    messagebox.showinfo("Éxito", "Calibración YAML cargada correctamente")
+                else:
+                    messagebox.showerror("Error", "No se pudo cargar el archivo de calibración")
+            
+            except Exception as e:
+                messagebox.showerror("Error", f"Error al leer el archivo YAML: {str(e)}")
     
     def show_calibration_info(self):
         """Muestra información sobre la calibración actual."""

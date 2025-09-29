@@ -4,7 +4,6 @@ from PIL import Image, ImageTk
 import os
 from undistortion import CameraUndistortion
 
-# Importar helpers
 from helpers.segmentation import SegmentationHelper
 from helpers.aruco import ArucoHelper
 from helpers.image_display import ImageDisplayHelper
@@ -190,7 +189,7 @@ class FishMorphologyGUI:
         aruco_frame = ttk.Frame(scale_frame)
         aruco_frame.grid(row=0, column=0, columnspan=6, pady=(0, 10), sticky=(tk.W, tk.E))
         
-        ttk.Label(aruco_frame, text="ArUco 4x4 (100mm):").pack(side=tk.LEFT, padx=(0, 5))
+        ttk.Label(aruco_frame, text="ArUco 4x4 (25mm):").pack(side=tk.LEFT, padx=(0, 5))
         
         self.detect_aruco_button = ttk.Button(aruco_frame, text="Detectar ArUco", 
                                              command=self.aruco_helper.detect_aruco_scale, state="disabled")
