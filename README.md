@@ -165,7 +165,4 @@ python seg/infer2_seg.py --ckpt seg/best_miou_V5.pth --input sample.jpg --out pr
 
 ---
 
-## 📄 Licencia
 
-Define aquí la licencia del proyecto (**MIT**, **Apache-2.0**, etc.).  
-Añade el texto completo si aplica.
