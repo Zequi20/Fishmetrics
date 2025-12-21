@@ -1,4 +1,4 @@
-# 🐟 Medición de Peces
+# 🐟 FishScan
 
 Aplicación de escritorio en **Tkinter** para segmentar peces en imágenes, detectar marcadores **ArUco** y obtener mediciones morfológicas (**longitud total, estándar, cefálica y profundidad corporal**).  
 Incluye utilidades de **corrección de distorsión** y **escalado manual/automático**.
