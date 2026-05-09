@@ -10,3 +10,4 @@ med/
 *.jpeg
 *.jpg
 *.txt
+.venv/
