@@ -13,13 +13,14 @@ class ResultsHelper:
         if self.gui.measurements:
             cm_per_pixel = self.gui.pixel_to_cm_ratio.get()
             
-            for measurement, value_px in self.gui.measurements.items():
+            for index, (measurement, value_px) in enumerate(self.gui.measurements.items()):
                 value_cm = value_px * cm_per_pixel
                 self.gui.results_tree.insert("", "end", values=(
                     measurement, 
                     f"{value_px:.1f} px", 
                     f"{value_cm:.2f} cm"
-                ))
+                ), tags=("even" if index % 2 == 0 else "odd",))
+        self.gui._sync_flow_state()
     
     def clear_results(self):
         """Limpiar los resultados mostrados"""
@@ -48,11 +49,13 @@ class ResultsHelper:
             self.gui.detect_aruco_button.config(state="disabled")
         
         self.gui.aruco_status_label.config(text="No detectado")
+        self.gui._sync_flow_state()
     
     def save_results(self):
         """Guardar los resultados en un archivo de texto"""
         if not self.gui.measurements:
             messagebox.showwarning("Advertencia", "No hay resultados para guardar")
+            self.gui.set_status("No hay resultados para guardar", kind="warning", toast=True)
             return
         
         filename = filedialog.asksaveasfilename(
@@ -65,10 +68,11 @@ class ResultsHelper:
             try:
                 self._write_results_to_file(filename)
                 messagebox.showinfo("Éxito", f"Resultados guardados en: {filename}")
-                self.gui.status_label.config(text="Resultados guardados exitosamente")
+                self.gui.set_status("Resultados guardados exitosamente", kind="success", toast=True)
                 
             except Exception as e:
                 messagebox.showerror("Error", f"No se pudieron guardar los resultados: {str(e)}")
+                self.gui.set_status("No se pudieron guardar los resultados", kind="danger", toast=True)
     
     def _write_results_to_file(self, filename):
         """Escribe los resultados al archivo especificado"""

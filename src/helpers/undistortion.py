@@ -23,7 +23,12 @@ class UndistortionHelper:
         else:
             self.gui.view_undist_button.config(state="disabled")
         
-        self.gui.status_label.config(text=f"Corrección de distorsión {'habilitada' if enabled else 'deshabilitada'}")
+        self.gui.set_status(
+            f"Corrección de distorsión {'habilitada' if enabled else 'deshabilitada'}",
+            kind="success" if enabled else "info",
+            toast=True,
+        )
+        self.gui._sync_flow_state()
     
     def load_calibration(self):
         """Carga parámetros de calibración desde un archivo YAML."""
@@ -49,6 +54,7 @@ class UndistortionHelper:
                 height = calibration_data.get('height')
                 
                 if model != "SIMPLE_PINHOLE" or not parameters or len(parameters) < 3:
+                    self.gui.set_status("Formato de calibración no compatible", kind="danger", toast=True)
                     messagebox.showerror("Error", "Formato de archivo de calibración no válido o incompatible")
                     return
                 
@@ -67,12 +73,14 @@ class UndistortionHelper:
                 )
                 
                 if success:
-                    self.gui.status_label.config(text=f"Calibración YAML cargada desde {os.path.basename(filename)}")
+                    self.gui.set_status(f"Calibración YAML cargada desde {os.path.basename(filename)}", kind="success", toast=True)
                     messagebox.showinfo("Éxito", "Calibración YAML cargada correctamente")
                 else:
+                    self.gui.set_status("No se pudo cargar el archivo de calibración", kind="danger", toast=True)
                     messagebox.showerror("Error", "No se pudo cargar el archivo de calibración")
             
             except Exception as e:
+                self.gui.set_status("Error al leer el archivo YAML", kind="danger", toast=True)
                 messagebox.showerror("Error", f"Error al leer el archivo YAML: {str(e)}")
     
     def show_calibration_info(self):
@@ -108,13 +116,14 @@ Tamaño de imagen: {info.get('image_size', 'No definido')}"""
         
         try:
             import cv2
-            self.gui.status_label.config(text="Generando vista previa de corrección...")
+            self.gui.set_status("Generando vista previa de corrección...", kind="active", busy=True)
             self.gui.root.update()
             
             # Cargar imagen original
             original = cv2.imread(self.gui.current_image_path)
             if original is None:
                 messagebox.showerror("Error", "No se pudo cargar la imagen")
+                self.gui.set_status("No se pudo cargar la imagen", kind="danger", toast=True)
                 return
             
             # Aplicar corrección
@@ -123,6 +132,7 @@ Tamaño de imagen: {info.get('image_size', 'No definido')}"""
             
             # Crear imagen combinada para comparación
             h, w = original.shape[:2]
+            new_w, new_h = w, h
             
             # Redimensionar si es muy grande
             if w > 800:
@@ -146,8 +156,10 @@ Tamaño de imagen: {info.get('image_size', 'No definido')}"""
             cv2.imwrite(preview_path, combined)
             self.gui.display_image(preview_path)
             
-            self.gui.status_label.config(text="Vista previa de corrección mostrada")
+            self.gui.set_status("Vista previa de corrección mostrada", kind="success", toast=True)
             
         except Exception as e:
             messagebox.showerror("Error", f"Error al generar vista previa: {str(e)}")
-            self.gui.status_label.config(text="Error en vista previa")
+            self.gui.set_status("Error en vista previa", kind="danger", toast=True)
+        finally:
+            self.gui.set_busy(False)

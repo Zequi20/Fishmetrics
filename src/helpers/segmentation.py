@@ -21,6 +21,8 @@ class SegmentationHelper:
         self.gui.segment_button.config(state="disabled")
         correction_text = " (con corrección)" if self.gui.undistortion_enabled.get() else ""
         self.gui.seg_progress_var.set(f"Ejecutando segmentación{correction_text}...")
+        self.gui.set_status(f"Ejecutando segmentación{correction_text}...", kind="active", busy=True)
+        self.gui._set_step_state("segmentation", "active", "Procesando")
         self.gui.seg_progress_bar.start()
         
         thread = threading.Thread(target=self.run_segmentation_thread)
@@ -42,6 +44,7 @@ class SegmentationHelper:
     def segmentation_completed(self, result):
         """Callback cuando la segmentación se completa."""
         self.gui.seg_progress_bar.stop()
+        self.gui.set_busy(False)
         if self.requirements["all_ready"]:
             self.gui.segment_button.config(state="normal")
         
@@ -55,11 +58,13 @@ class SegmentationHelper:
             self.gui.view_ids_button.config(state="normal")
             
             self.show_segmentation_result("mask_color")
-            self.gui.status_label.config(text="Segmentación exitosa")
+            self.gui.set_status("Segmentación exitosa", kind="success", toast=True)
+            self.gui._sync_flow_state()
         else:
             from tkinter import messagebox
             self.gui.seg_progress_var.set("Error en segmentación")
-            self.gui.status_label.config(text=f"Error: {result.get('error', 'Error desconocido')}")
+            self.gui.set_status(f"Error: {result.get('error', 'Error desconocido')}", kind="danger", toast=True)
+            self.gui._sync_flow_state()
             messagebox.showerror("Error de Segmentación", result.get("message", "Error desconocido"))
     
     def show_segmentation_result(self, result_type):
@@ -72,10 +77,11 @@ class SegmentationHelper:
         file_path = self.gui.segmentation_results.get(result_type)
         if file_path and file_path.exists():
             self.gui.display_image(str(file_path))
-            self.gui.status_label.config(text=f"Mostrando: {result_type}")
+            self.gui.set_status(f"Mostrando: {result_type}", kind="info")
         else:
             from tkinter import messagebox
             messagebox.showerror("Error", f"Archivo no encontrado: {result_type}")
+            self.gui.set_status(f"Archivo no encontrado: {result_type}", kind="danger", toast=True)
 
     def run_segmentation_and_analyze_async(self):
         """Ejecuta segmentación y luego análisis automáticamente"""
@@ -86,6 +92,8 @@ class SegmentationHelper:
         self.gui.analyze_button.config(state="disabled")
         correction_text = " (con corrección)" if self.gui.undistortion_enabled.get() else ""
         self.gui.seg_progress_var.set(f"Ejecutando segmentación{correction_text}...")
+        self.gui.set_status(f"Ejecutando segmentación{correction_text}...", kind="active", busy=True)
+        self.gui._set_step_state("segmentation", "active", "Procesando")
         self.gui.seg_progress_bar.start()
         
         thread = threading.Thread(target=self.run_segmentation_and_analyze_thread)
@@ -109,7 +117,7 @@ class SegmentationHelper:
         self.segmentation_completed(result)
         
         if result["success"]:
-            self.gui.root.after(1000, self.gui.analyze_image)
+            self.gui.root.after(1000, self.gui.morphology_helper.analyze_image)
 
     def check_segmentation_status(self):
         """Verifica y actualiza el estado de la segmentación."""
@@ -122,5 +130,7 @@ class SegmentationHelper:
             
             self.gui.segment_button.config(state="disabled")
             self.gui.seg_progress_var.set(f"No disponible - Faltan: {', '.join(missing)}")
+            self.gui._sync_flow_state()
         else:
             self.gui.seg_progress_var.set("Listo para segmentar")
+            self.gui._sync_flow_state()

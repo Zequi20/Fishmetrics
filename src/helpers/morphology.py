@@ -28,7 +28,8 @@ class MorphologyHelper:
         
         try:
             correction_text = " (con corrección)" if self.gui.undistortion_enabled.get() else ""
-            self.gui.status_label.config(text=f"Analizando morfología{correction_text}...")
+            self.gui.set_status(f"Analizando morfología{correction_text}...", kind="active", busy=True)
+            self.gui._set_step_state("analysis", "active", "Midiendo")
             self.gui.root.update()
             
             self.gui.measurements, self.gui.annotated_image = measure_morphology(
@@ -42,12 +43,17 @@ class MorphologyHelper:
                 if os.path.exists(annotated_path):
                     self.gui.display_image(annotated_path)
                 
-                self.gui.status_label.config(text="Análisis morfológico completado")
+                self.gui.set_status("Análisis morfológico completado", kind="success", toast=True)
                 self.gui.save_button.config(state="normal")
+                self.gui._sync_flow_state()
             else:
                 messagebox.showerror("Error", "No se pudieron obtener mediciones de la imagen")
-                self.gui.status_label.config(text="Error en el análisis")
+                self.gui.set_status("Error en el análisis", kind="danger", toast=True)
+                self.gui._sync_flow_state()
                 
         except Exception as e:
             messagebox.showerror("Error", f"Error durante el análisis: {str(e)}")
-            self.gui.status_label.config(text="Error en el análisis")
+            self.gui.set_status("Error en el análisis", kind="danger", toast=True)
+            self.gui._sync_flow_state()
+        finally:
+            self.gui.set_busy(False)

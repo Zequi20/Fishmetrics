@@ -11,14 +11,16 @@ class ImageDisplayHelper:
         try:
             pil_image = Image.open(image_path)
             
-            canvas_width = 700
-            canvas_height = 500
+            canvas_width = max(self.gui.image_canvas.winfo_width(), 760)
+            canvas_height = max(self.gui.image_canvas.winfo_height(), 560)
             
             img_width, img_height = pil_image.size
             
-            scale_w = canvas_width / img_width
-            scale_h = canvas_height / img_height
-            scale = min(scale_w, scale_h, 1.5)
+            max_width = max(canvas_width - 48, 320)
+            max_height = max(canvas_height - 48, 240)
+            scale_w = max_width / img_width
+            scale_h = max_height / img_height
+            scale = min(scale_w, scale_h, 2.0)
             
             new_width = int(img_width * scale)
             new_height = int(img_height * scale)
@@ -28,10 +30,22 @@ class ImageDisplayHelper:
             self.gui.photo = ImageTk.PhotoImage(pil_image)
             
             self.gui.image_canvas.delete("all")
-            self.gui.image_canvas.create_image(canvas_width//2, canvas_height//2, 
-                                         anchor=tk.CENTER, image=self.gui.photo)
+            self.gui.image_canvas.create_rectangle(
+                0,
+                0,
+                canvas_width,
+                canvas_height,
+                fill=self.gui.colors.get("canvas", "#ffffff"),
+                outline=""
+            )
+
+            x = max((canvas_width - new_width) // 2, 24)
+            y = max((canvas_height - new_height) // 2, 24)
+            self.gui.image_canvas.create_image(x, y, anchor=tk.NW, image=self.gui.photo)
             
-            self.gui.image_canvas.configure(scrollregion=self.gui.image_canvas.bbox("all"))
+            scroll_width = max(canvas_width, x + new_width + 24)
+            scroll_height = max(canvas_height, y + new_height + 24)
+            self.gui.image_canvas.configure(scrollregion=(0, 0, scroll_width, scroll_height))
             
         except Exception as e:
             messagebox.showerror("Error", f"No se pudo cargar la imagen: {str(e)}")

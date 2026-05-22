@@ -14,7 +14,7 @@ class ArucoHelper:
             return
         
         try:
-            self.gui.status_label.config(text="Detectando marcador ArUco...")
+            self.gui.set_status("Detectando marcador ArUco...", kind="active", busy=True)
             self.gui.root.update()
             
             # Usar imagen procesada (con corrección si está habilitada)
@@ -46,23 +46,27 @@ class ArucoHelper:
                 
                 # Actualizar resultados si ya hay mediciones
                 if self.gui.measurements:
-                    self.gui.display_results()
+                    self.gui.results_helper.display_results()
                 
                 correction_text = " (con corrección)" if self.gui.undistortion_enabled.get() else ""
-                self.gui.status_label.config(text=f"ArUco detectado{correction_text} - Escala automática aplicada")
+                self.gui.set_status(f"ArUco detectado{correction_text} - Escala automática aplicada", kind="success", toast=True)
+                self.gui._sync_flow_state()
                 messagebox.showinfo("Éxito", f"Marcador ArUco detectado (ID: {marker_id})\n"
                                              f"Escala aplicada automáticamente: {cm_per_pixel:.4f} cm/píxel")
                 
             else:
                 self.gui.aruco_status_label.config(text="No detectado")
-                self.gui.status_label.config(text="No se detectó marcador ArUco")
+                self.gui.set_status("No se detectó marcador ArUco", kind="warning", toast=True)
+                self.gui._sync_flow_state()
                 error_msg = self.gui.aruco_detection.get("error", "No se encontraron marcadores ArUco 4x4 en la imagen")
                 messagebox.showinfo("No detectado", f"No se detectó marcador ArUco.\n{error_msg}\n\nPuedes usar la escala manual.")
                 
         except Exception as e:
             self.gui.aruco_status_label.config(text="Error en detección")
-            self.gui.status_label.config(text="Error al detectar ArUco")
+            self.gui.set_status("Error al detectar ArUco", kind="danger", toast=True)
             messagebox.showerror("Error", f"Error al detectar ArUco: {str(e)}")
+        finally:
+            self.gui.set_busy(False)
     
     def show_aruco_detection(self):
         """Muestra la imagen con la detección de ArUco resaltada."""
@@ -80,9 +84,11 @@ class ArucoHelper:
             
             if img_with_aruco is not None:
                 self.gui.display_image(output_path)
-                self.gui.status_label.config(text="Mostrando detección de ArUco")
+                self.gui.set_status("Mostrando detección de ArUco", kind="info")
             else:
                 messagebox.showerror("Error", "No se pudo generar la imagen con detección")
+                self.gui.set_status("No se pudo generar la imagen con detección", kind="danger", toast=True)
                 
         except Exception as e:
             messagebox.showerror("Error", f"Error al mostrar detección ArUco: {str(e)}")
+            self.gui.set_status("Error al mostrar detección ArUco", kind="danger", toast=True)

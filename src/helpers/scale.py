@@ -13,6 +13,7 @@ class ScaleHelper:
             
             if pixels <= 0 or cm <= 0:
                 messagebox.showerror("Error", "Los valores deben ser positivos")
+                self.gui.set_status("Los valores de escala deben ser positivos", kind="danger", toast=True)
                 return
             
             cm_per_pixel = cm / pixels
@@ -24,7 +25,9 @@ class ScaleHelper:
             if self.gui.measurements:
                 self.gui.results_helper.display_results()
                 
-            self.gui.status_label.config(text=f"Escala manual aplicada: {pixels} píxeles = {cm} cm")
+            self.gui.set_status(f"Escala manual aplicada: {pixels} píxeles = {cm} cm", kind="success", toast=True)
+            self.gui._sync_flow_state()
             
         except ValueError:
             messagebox.showerror("Error", "Por favor ingrese valores numéricos válidos")
+            self.gui.set_status("Valores de escala inválidos", kind="danger", toast=True)

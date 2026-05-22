@@ -1,7 +1,7 @@
-import tkinter as tk
-from tkinter import ttk, filedialog, messagebox
-from PIL import Image, ImageTk
 import os
+import tkinter as tk
+from tkinter import ttk, filedialog
+
 from undistortion import CameraUndistortion
 
 from helpers.segmentation import SegmentationHelper
@@ -12,26 +12,38 @@ from helpers.undistortion import UndistortionHelper
 from helpers.morphology import MorphologyHelper
 from helpers.scale import ScaleHelper
 
+
 class FishMorphologyGUI:
     def __init__(self, root):
         self.root = root
-        self.root.title("Análisis Morfológico de Peces")
-        self.root.geometry("1400x900")
-        
-        # Variables
+        self.root.title("FishMetrics - Workbench de análisis")
+        self.root.geometry("1440x920")
+        self.root.minsize(1180, 760)
+        self.root.option_add("*tearOff", False)
+
+        # Variables de dominio
         self.current_image_path = None
+        self.current_display_path = None
         self.measurements = None
         self.annotated_image = None
         self.pixel_to_cm_ratio = tk.DoubleVar(value=1.0)
         self.segmentation_results = None
         self.aruco_detection = None
-        
+
         # Sistema de corrección de distorsión
         self.undistorter = CameraUndistortion()
         self.undistorter.set_default_calibration()
         self.undistortion_enabled = tk.BooleanVar(value=False)
         self.undistortion_alpha = tk.DoubleVar(value=1.0)
-        
+
+        # Estado visual
+        self.theme_name = "light"
+        self.status_kind = "info"
+        self.step_widgets = {}
+        self.summary_values = {}
+        self._toast_after_id = None
+        self._resize_after_id = None
+
         # Inicializar helpers
         self.segmentation_helper = SegmentationHelper(self)
         self.aruco_helper = ArucoHelper(self)
@@ -40,289 +52,974 @@ class FishMorphologyGUI:
         self.undistortion_helper = UndistortionHelper(self)
         self.morphology_helper = MorphologyHelper(self)
         self.scale_helper = ScaleHelper(self)
-        
-        # Crear la interfaz
+
         self.create_widgets()
-        
-        # Verificar requisitos iniciales
         self.segmentation_helper.check_segmentation_status()
+        self._sync_flow_state()
 
     def create_widgets(self):
-        # Frame principal
-        main_frame = ttk.Frame(self.root, padding="10")
+        self._configure_styles()
+
+        main_frame = ttk.Frame(self.root, style="App.TFrame")
         main_frame.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
-        
-        # Configurar el grid
+
         self.root.columnconfigure(0, weight=1)
         self.root.rowconfigure(0, weight=1)
-        main_frame.columnconfigure(1, weight=1)
-        main_frame.rowconfigure(5, weight=1)
-        
-        # Título
-        title_label = ttk.Label(main_frame, text="Análisis Morfológico de Peces", 
-                               font=("Arial", 16, "bold"))
-        title_label.grid(row=0, column=0, columnspan=3, pady=(0, 20))
-        
-        # 1. BOTONES PRINCIPALES
-        self._create_main_buttons(main_frame)
-        
-        # 2. CORRECCIÓN DE DISTORSIÓN
-        self._create_undistortion_frame(main_frame)
-        
-        # 3. SEGMENTACIÓN
-        self._create_segmentation_frame(main_frame)
-        
-        # 4. CONFIGURACIÓN DE ESCALA
-        self._create_scale_frame(main_frame)
-        
-        # 5. CONTENIDO PRINCIPAL
-        self._create_content_frame(main_frame)
-        
-        # 6. BARRA DE ESTADO
+        main_frame.columnconfigure(0, weight=1)
+        main_frame.rowconfigure(1, weight=1)
+
+        self._create_top_bar(main_frame)
+
+        workspace = ttk.Frame(main_frame, style="App.TFrame", padding=(18, 0, 18, 0))
+        workspace.grid(row=1, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
+        workspace.columnconfigure(0, minsize=330, weight=0)
+        workspace.columnconfigure(1, weight=1)
+        workspace.columnconfigure(2, minsize=360, weight=0)
+        workspace.rowconfigure(0, weight=1)
+
+        sidebar = self._create_sidebar(workspace)
+        self._create_main_buttons(sidebar)
+        self._create_undistortion_frame(sidebar)
+        self._create_scale_frame(sidebar)
+        self._create_segmentation_frame(sidebar)
+        self._create_analysis_frame(sidebar)
+
+        self._create_image_workspace(workspace)
+        self._create_results_panel(workspace)
         self._create_status_frame(main_frame)
+        self._draw_empty_canvas()
+
+    def _configure_styles(self):
+        """Configura tokens visuales y estilos para modo claro/oscuro."""
+        self.palettes = self._build_color_palettes()
+        self.colors = self.palettes[self.theme_name]
+        self.fonts = {
+            "base": ("DejaVu Sans", 10),
+            "small": ("DejaVu Sans", 9),
+            "small_bold": ("DejaVu Sans", 9, "bold"),
+            "section": ("DejaVu Sans", 10, "bold"),
+            "title": ("DejaVu Sans", 18, "bold"),
+            "hero": ("DejaVu Sans", 14, "bold"),
+        }
+
+        self.style = ttk.Style(self.root)
+        try:
+            self.style.theme_use("clam")
+        except tk.TclError:
+            pass
+
+        self._apply_styles()
+
+    def _build_color_palettes(self):
+        return {
+            "light": {
+                "bg": "#f4f6f8",
+                "panel": "#ffffff",
+                "panel_alt": "#f8fafc",
+                "surface": "#eef2f6",
+                "canvas": "#fbfdff",
+                "border": "#d0d7de",
+                "soft_border": "#e5e7eb",
+                "text": "#111827",
+                "muted": "#64748b",
+                "primary": "#0f766e",
+                "primary_active": "#0d5f59",
+                "accent": "#2563eb",
+                "secondary": "#e8eef7",
+                "secondary_active": "#d9e3f2",
+                "secondary_disabled": "#eef2f6",
+                "button_disabled": "#a7b0bc",
+                "input": "#ffffff",
+                "progress_trough": "#e8edf5",
+                "table": "#ffffff",
+                "table_alt": "#f8fafc",
+                "table_heading": "#eef2f7",
+                "selection": "#2563eb",
+                "selection_fg": "#ffffff",
+                "pending_bg": "#f1f5f9",
+                "pending_fg": "#64748b",
+                "ready_bg": "#dbeafe",
+                "ready_fg": "#1d4ed8",
+                "active_bg": "#fff7ed",
+                "active_fg": "#9a3412",
+                "success_bg": "#dcfce7",
+                "success_fg": "#15803d",
+                "warning_bg": "#fef3c7",
+                "warning_fg": "#92400e",
+                "danger_bg": "#fee2e2",
+                "danger_fg": "#b91c1c",
+                "success": "#15803d",
+                "warning": "#b45309",
+                "danger": "#b91c1c",
+            },
+            "dark": {
+                "bg": "#101114",
+                "panel": "#181a1f",
+                "panel_alt": "#1f232b",
+                "surface": "#151820",
+                "canvas": "#111317",
+                "border": "#2f3542",
+                "soft_border": "#242a34",
+                "text": "#f4f7fb",
+                "muted": "#a1a7b3",
+                "primary": "#14b8a6",
+                "primary_active": "#0f9f91",
+                "accent": "#60a5fa",
+                "secondary": "#242b36",
+                "secondary_active": "#303948",
+                "secondary_disabled": "#1d222b",
+                "button_disabled": "#404754",
+                "input": "#12151b",
+                "progress_trough": "#242a34",
+                "table": "#151820",
+                "table_alt": "#1b2029",
+                "table_heading": "#222833",
+                "selection": "#2563eb",
+                "selection_fg": "#ffffff",
+                "pending_bg": "#232833",
+                "pending_fg": "#a1a7b3",
+                "ready_bg": "#132c47",
+                "ready_fg": "#93c5fd",
+                "active_bg": "#3a2718",
+                "active_fg": "#fdba74",
+                "success_bg": "#14351f",
+                "success_fg": "#86efac",
+                "warning_bg": "#3a2f13",
+                "warning_fg": "#facc15",
+                "danger_bg": "#3a181b",
+                "danger_fg": "#fca5a5",
+                "success": "#22c55e",
+                "warning": "#f59e0b",
+                "danger": "#ef4444",
+            },
+        }
+
+    def _apply_styles(self):
+        style = self.style
+        self.root.configure(bg=self.colors["bg"])
+
+        style.configure(".", font=self.fonts["base"], background=self.colors["panel"], foreground=self.colors["text"])
+        style.configure("App.TFrame", background=self.colors["bg"])
+        style.configure("TopBar.TFrame", background=self.colors["panel"])
+        style.configure("Panel.TFrame", background=self.colors["panel"], relief="solid", borderwidth=1)
+        style.configure("PanelInner.TFrame", background=self.colors["panel"])
+        style.configure("Surface.TFrame", background=self.colors["surface"])
+        style.configure("Status.TFrame", background=self.colors["panel"])
+
+        style.configure("TLabel", background=self.colors["panel"], foreground=self.colors["text"])
+        style.configure("App.TLabel", background=self.colors["bg"], foreground=self.colors["text"])
+        style.configure("Title.TLabel", background=self.colors["panel"], foreground=self.colors["text"], font=self.fonts["title"])
+        style.configure("Subtitle.TLabel", background=self.colors["panel"], foreground=self.colors["muted"], font=self.fonts["small"])
+        style.configure("Section.TLabel", background=self.colors["panel"], foreground=self.colors["text"], font=self.fonts["section"])
+        style.configure("Muted.TLabel", background=self.colors["panel"], foreground=self.colors["muted"], font=self.fonts["small"])
+        style.configure("Value.TLabel", background=self.colors["panel"], foreground=self.colors["text"], font=self.fonts["small_bold"])
+        style.configure("Status.TLabel", background=self.colors["panel"], foreground=self.colors["muted"], font=self.fonts["small"])
+        style.configure("CanvasTitle.TLabel", background=self.colors["panel"], foreground=self.colors["text"], font=self.fonts["hero"])
+        style.configure("SidebarTitle.TLabel", background=self.colors["bg"], foreground=self.colors["muted"], font=self.fonts["small_bold"])
+
+        style.configure(
+            "TButton",
+            background=self.colors["secondary"],
+            foreground=self.colors["text"],
+            padding=(10, 7),
+            font=self.fonts["base"],
+        )
+        style.map(
+            "TButton",
+            background=[("active", self.colors["secondary_active"]), ("disabled", self.colors["secondary_disabled"])],
+            foreground=[("disabled", self.colors["muted"])],
+        )
+        style.configure("Primary.TButton", background=self.colors["primary"], foreground="#ffffff", padding=(12, 9), font=self.fonts["section"])
+        style.map(
+            "Primary.TButton",
+            background=[("active", self.colors["primary_active"]), ("disabled", self.colors["button_disabled"])],
+            foreground=[("disabled", "#ffffff")],
+        )
+        style.configure("Secondary.TButton", background=self.colors["secondary"], foreground=self.colors["text"], padding=(10, 7))
+        style.map(
+            "Secondary.TButton",
+            background=[("active", self.colors["secondary_active"]), ("disabled", self.colors["secondary_disabled"])],
+            foreground=[("disabled", self.colors["muted"])],
+        )
+        style.configure("Compact.TButton", background=self.colors["secondary"], foreground=self.colors["text"], padding=(8, 5), font=self.fonts["small"])
+
+        style.configure("TCheckbutton", background=self.colors["panel"], foreground=self.colors["text"])
+        style.map("TCheckbutton", background=[("active", self.colors["panel"])])
+        style.configure(
+            "TCombobox",
+            padding=(6, 4),
+            fieldbackground=self.colors["input"],
+            background=self.colors["secondary"],
+            foreground=self.colors["text"],
+            arrowcolor=self.colors["muted"],
+        )
+        style.map(
+            "TCombobox",
+            fieldbackground=[("readonly", self.colors["input"])],
+            selectbackground=[("readonly", self.colors["selection"])],
+            selectforeground=[("readonly", self.colors["selection_fg"])],
+        )
+        style.configure(
+            "TEntry",
+            padding=(6, 4),
+            fieldbackground=self.colors["input"],
+            foreground=self.colors["text"],
+            insertcolor=self.colors["text"],
+        )
+        style.configure("Horizontal.TProgressbar", troughcolor=self.colors["progress_trough"], background=self.colors["accent"])
+
+        style.configure(
+            "Treeview",
+            rowheight=32,
+            borderwidth=0,
+            background=self.colors["table"],
+            fieldbackground=self.colors["table"],
+            foreground=self.colors["text"],
+        )
+        style.configure("Treeview.Heading", font=self.fonts["small_bold"], background=self.colors["table_heading"], foreground=self.colors["text"])
+        style.map("Treeview", background=[("selected", self.colors["selection"])], foreground=[("selected", self.colors["selection_fg"])])
+
+    def _create_top_bar(self, parent):
+        top_bar = ttk.Frame(parent, style="TopBar.TFrame", padding=(20, 14))
+        top_bar.grid(row=0, column=0, sticky=(tk.W, tk.E), pady=(0, 14))
+        top_bar.columnconfigure(0, weight=1)
+
+        title_block = ttk.Frame(top_bar, style="TopBar.TFrame")
+        title_block.grid(row=0, column=0, sticky=tk.W)
+
+        ttk.Label(title_block, text="FishMetrics", style="Title.TLabel").grid(row=0, column=0, sticky=tk.W)
+        ttk.Label(
+            title_block,
+            text="Workbench para medición morfológica, escala, segmentación y corrección óptica",
+            style="Subtitle.TLabel",
+        ).grid(row=1, column=0, sticky=tk.W, pady=(2, 0))
+
+        status_area = ttk.Frame(top_bar, style="TopBar.TFrame")
+        status_area.grid(row=0, column=1, sticky=(tk.E, tk.N))
+
+        self.header_state_label = tk.Label(
+            status_area,
+            text="Sin imagen",
+            bg=self.colors["pending_bg"],
+            fg=self.colors["pending_fg"],
+            padx=10,
+            pady=4,
+            font=self.fonts["small_bold"],
+        )
+        self.header_state_label.grid(row=0, column=0, sticky=tk.E, padx=(0, 8))
+
+        self.header_scale_label = tk.Label(
+            status_area,
+            text="Escala 1.0000 cm/px",
+            bg=self.colors["ready_bg"],
+            fg=self.colors["ready_fg"],
+            padx=10,
+            pady=4,
+            font=self.fonts["small_bold"],
+        )
+        self.header_scale_label.grid(row=0, column=1, sticky=tk.E)
+
+        self.theme_toggle_button = ttk.Button(
+            status_area,
+            text="Modo oscuro",
+            command=self.toggle_theme,
+            style="Compact.TButton",
+        )
+        self.theme_toggle_button.grid(row=0, column=2, sticky=tk.E, padx=(8, 0))
+
+        self.toast_label = tk.Label(
+            status_area,
+            text="",
+            bg=self.colors["panel"],
+            fg=self.colors["panel"],
+            padx=12,
+            pady=6,
+            font=self.fonts["small_bold"],
+            wraplength=360,
+            justify=tk.LEFT,
+        )
+        self.toast_label.grid(row=1, column=0, columnspan=3, sticky=tk.E, pady=(8, 0))
+
+    def _create_sidebar(self, parent):
+        sidebar_shell = ttk.Frame(parent, style="App.TFrame")
+        sidebar_shell.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S), padx=(0, 14))
+        sidebar_shell.columnconfigure(0, weight=1)
+        sidebar_shell.rowconfigure(0, weight=1)
+
+        sidebar_canvas = tk.Canvas(sidebar_shell, bg=self.colors["bg"], highlightthickness=0, width=330)
+        self.sidebar_canvas = sidebar_canvas
+        sidebar_canvas.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
+
+        sidebar_scrollbar = ttk.Scrollbar(sidebar_shell, orient="vertical", command=sidebar_canvas.yview)
+        sidebar_scrollbar.grid(row=0, column=1, sticky=(tk.N, tk.S))
+        sidebar_canvas.configure(yscrollcommand=sidebar_scrollbar.set)
+
+        sidebar = ttk.Frame(sidebar_canvas, style="App.TFrame")
+        sidebar_window = sidebar_canvas.create_window((0, 0), window=sidebar, anchor="nw")
+        sidebar.columnconfigure(0, weight=1)
+
+        ttk.Label(sidebar, text="FLUJO DE TRABAJO", style="SidebarTitle.TLabel").grid(
+            row=0, column=0, sticky=tk.W, pady=(0, 8)
+        )
+
+        def update_sidebar_scrollregion(_event):
+            sidebar_canvas.configure(scrollregion=sidebar_canvas.bbox("all"))
+
+        def update_sidebar_width(event):
+            sidebar_canvas.itemconfigure(sidebar_window, width=event.width)
+
+        def scroll_sidebar(event):
+            if event.num == 4:
+                sidebar_canvas.yview_scroll(-1, "units")
+            elif event.num == 5:
+                sidebar_canvas.yview_scroll(1, "units")
+            else:
+                sidebar_canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+
+        sidebar.bind("<Configure>", update_sidebar_scrollregion)
+        sidebar_canvas.bind("<Configure>", update_sidebar_width)
+        sidebar_canvas.bind("<Enter>", lambda _event: self._bind_mousewheel(sidebar_canvas, scroll_sidebar))
+        sidebar_canvas.bind("<Leave>", lambda _event: self._unbind_mousewheel(sidebar_canvas))
+
+        return sidebar
+
+    def _bind_mousewheel(self, widget, callback):
+        widget.bind_all("<MouseWheel>", callback)
+        widget.bind_all("<Button-4>", callback)
+        widget.bind_all("<Button-5>", callback)
+
+    def _unbind_mousewheel(self, widget):
+        widget.unbind_all("<MouseWheel>")
+        widget.unbind_all("<Button-4>")
+        widget.unbind_all("<Button-5>")
+
+    def toggle_theme(self):
+        next_theme = "dark" if self.theme_name == "light" else "light"
+        self.set_theme(next_theme)
+
+    def set_theme(self, theme_name):
+        if theme_name not in self.palettes:
+            return
+
+        self.theme_name = theme_name
+        self.colors = self.palettes[theme_name]
+        self._apply_styles()
+        self._refresh_theme_widgets()
+        self._sync_flow_state()
+        self._redraw_canvas()
+
+        theme_label = "oscuro" if theme_name == "dark" else "claro"
+        self.show_toast(f"Modo {theme_label} aplicado", kind="success")
+
+    def _refresh_theme_widgets(self):
+        self.root.configure(bg=self.colors["bg"])
+
+        if hasattr(self, "sidebar_canvas"):
+            self.sidebar_canvas.configure(bg=self.colors["bg"])
+
+        if hasattr(self, "image_canvas"):
+            self.image_canvas.configure(
+                bg=self.colors["canvas"],
+                highlightbackground=self.colors["border"],
+            )
+
+        if hasattr(self, "results_tree"):
+            self.results_tree.tag_configure("odd", background=self.colors["table_alt"], foreground=self.colors["text"])
+            self.results_tree.tag_configure("even", background=self.colors["table"], foreground=self.colors["text"])
+
+        if hasattr(self, "theme_toggle_button"):
+            label = "Modo claro" if self.theme_name == "dark" else "Modo oscuro"
+            self.theme_toggle_button.config(text=label)
+
+        if hasattr(self, "toast_label") and not self.toast_label.cget("text"):
+            self.toast_label.config(bg=self.colors["panel"], fg=self.colors["panel"])
+
+        if hasattr(self, "status_dot"):
+            self.status_dot.config(bg=self._status_dot_color(self.status_kind))
+
+    def _create_step_card(self, parent, row, key, number, title):
+        card = ttk.Frame(parent, style="Panel.TFrame", padding=14)
+        card.grid(row=row, column=0, pady=(0, 12), sticky=(tk.W, tk.E))
+        card.columnconfigure(0, weight=1)
+
+        header = ttk.Frame(card, style="PanelInner.TFrame")
+        header.grid(row=0, column=0, sticky=(tk.W, tk.E))
+        header.columnconfigure(1, weight=1)
+
+        badge = tk.Label(
+            header,
+            text=str(number),
+            bg=self.colors["pending_bg"],
+            fg=self.colors["pending_fg"],
+            width=3,
+            padx=2,
+            pady=3,
+            font=self.fonts["small_bold"],
+        )
+        badge.grid(row=0, column=0, sticky=tk.W, padx=(0, 10))
+
+        ttk.Label(header, text=title, style="Section.TLabel").grid(row=0, column=1, sticky=tk.W)
+
+        status = tk.Label(
+            header,
+            text="Pendiente",
+            bg=self.colors["pending_bg"],
+            fg=self.colors["pending_fg"],
+            padx=8,
+            pady=3,
+            font=self.fonts["small_bold"],
+        )
+        status.grid(row=0, column=2, sticky=tk.E)
+
+        content = ttk.Frame(card, style="PanelInner.TFrame")
+        content.grid(row=1, column=0, sticky=(tk.W, tk.E), pady=(12, 0))
+        content.columnconfigure(0, weight=1)
+
+        self.step_widgets[key] = {"badge": badge, "status": status}
+        return content
+
+    def _set_step_state(self, key, state, text=None):
+        widgets = self.step_widgets.get(key)
+        if not widgets:
+            return
+
+        states = {
+            "pending": ("Pendiente", self.colors["pending_bg"], self.colors["pending_fg"]),
+            "ready": ("Listo", self.colors["ready_bg"], self.colors["ready_fg"]),
+            "active": ("En curso", self.colors["active_bg"], self.colors["active_fg"]),
+            "done": ("Completado", self.colors["success_bg"], self.colors["success_fg"]),
+            "warning": ("Atención", self.colors["warning_bg"], self.colors["warning_fg"]),
+            "danger": ("Error", self.colors["danger_bg"], self.colors["danger_fg"]),
+        }
+        label, bg, fg = states.get(state, states["pending"])
+        widgets["badge"].config(bg=bg, fg=fg)
+        widgets["status"].config(text=text or label, bg=bg, fg=fg)
 
     def _create_main_buttons(self, parent):
-        """Crear frame de botones principales"""
-        button_frame = ttk.LabelFrame(parent, text="Controles Principales", padding="10")
-        button_frame.grid(row=1, column=0, columnspan=3, pady=(0, 10), sticky=(tk.W, tk.E))
-        
-        self.select_button = ttk.Button(button_frame, text="Seleccionar Imagen", 
-                                       command=self.select_image)
-        self.select_button.pack(side=tk.LEFT, padx=(0, 10))
-        
-        self.analyze_button = ttk.Button(button_frame, text="Analizar Morfología", 
-                                        command=self.morphology_helper.analyze_image, state="disabled")
-        self.analyze_button.pack(side=tk.LEFT, padx=(0, 10))
-        
-        self.save_button = ttk.Button(button_frame, text="Guardar Resultados", 
-                                     command=self.results_helper.save_results, state="disabled")
-        self.save_button.pack(side=tk.LEFT)
+        content = self._create_step_card(parent, 1, "image", 1, "Imagen")
+
+        self.select_button = ttk.Button(content, text="Abrir imagen", command=self.select_image, style="Primary.TButton")
+        self.select_button.grid(row=0, column=0, sticky=(tk.W, tk.E))
+
+        self.file_quick_label = ttk.Label(content, text="Ningún archivo seleccionado", style="Muted.TLabel", wraplength=280)
+        self.file_quick_label.grid(row=1, column=0, sticky=(tk.W, tk.E), pady=(8, 0))
 
     def _create_undistortion_frame(self, parent):
-        """Crear frame de corrección de distorsión"""
-        undist_frame = ttk.LabelFrame(parent, text="Corrección de Distorsión", padding="10")
-        undist_frame.grid(row=2, column=0, columnspan=3, pady=(0, 10), sticky=(tk.W, tk.E))
-        
-        # Checkbox para habilitar corrección
-        self.undist_check = ttk.Checkbutton(undist_frame, text="Aplicar corrección de distorsión", 
-                                           variable=self.undistortion_enabled,
-                                           command=self.undistortion_helper.on_undistortion_toggle)
-        self.undist_check.pack(side=tk.LEFT, padx=(0, 15))
-        
-        # Control de alpha
-        ttk.Label(undist_frame, text="Alpha:").pack(side=tk.LEFT, padx=(0, 5))
-        self.alpha_scale = ttk.Scale(undist_frame, from_=0.0, to=1.0, 
-                                    variable=self.undistortion_alpha, orient=tk.HORIZONTAL, length=100)
-        self.alpha_scale.pack(side=tk.LEFT, padx=(0, 5))
-        
-        self.alpha_label = ttk.Label(undist_frame, text="1.0")
-        self.alpha_label.pack(side=tk.LEFT, padx=(0, 15))
-        
-        # Actualizar label de alpha
-        self.undistortion_alpha.trace('w', self.undistortion_helper.update_alpha_label)
-        
-        # Botones de calibración
-        self.load_calib_button = ttk.Button(undist_frame, text="Cargar Calibración", 
-                                           command=self.undistortion_helper.load_calibration)
-        self.load_calib_button.pack(side=tk.LEFT, padx=(0, 5))
-        
-        self.view_undist_button = ttk.Button(undist_frame, text="Ver Corrección", 
-                                            command=self.undistortion_helper.show_undistortion_preview, state="disabled")
-        self.view_undist_button.pack(side=tk.LEFT, padx=(0, 5))
-        
-        self.calib_info_button = ttk.Button(undist_frame, text="Info Calibración", 
-                                           command=self.undistortion_helper.show_calibration_info)
-        self.calib_info_button.pack(side=tk.LEFT)
+        content = self._create_step_card(parent, 2, "optics", 2, "Corrección óptica")
+        content.columnconfigure(1, weight=1)
 
-    def _create_segmentation_frame(self, parent):
-        """Crear frame de segmentación"""
-        seg_frame = ttk.LabelFrame(parent, text="Segmentación", padding="10")
-        seg_frame.grid(row=3, column=0, columnspan=3, pady=(0, 10), sticky=(tk.W, tk.E))
-        
-        seg_controls_frame = ttk.Frame(seg_frame)
-        seg_controls_frame.pack(fill=tk.X)
-        
-        ttk.Label(seg_controls_frame, text="Dispositivo:").pack(side=tk.LEFT, padx=(0, 5))
-        
-        self.device_var = tk.StringVar(value="cpu")
-        device_combo = ttk.Combobox(seg_controls_frame, textvariable=self.device_var, 
-                                   values=["cpu", "cuda"], state="readonly", width=8)
-        device_combo.pack(side=tk.LEFT, padx=(0, 10))
-        
-        self.segment_button = ttk.Button(seg_controls_frame, text="Generar Segmentación", 
-                                        command=self.segmentation_helper.run_segmentation_async)
-        self.segment_button.pack(side=tk.LEFT, padx=(0, 10))
-        
-        self.seg_progress_var = tk.StringVar(value="Listo")
-        self.seg_status_label = ttk.Label(seg_frame, textvariable=self.seg_progress_var, 
-                                         font=("Arial", 9))
-        self.seg_status_label.pack(pady=(5, 0))
-        
-        self.seg_progress_bar = ttk.Progressbar(seg_frame, mode='indeterminate')
-        self.seg_progress_bar.pack(fill=tk.X, pady=(2, 5))
-        
-        seg_results_frame = ttk.Frame(seg_frame)
-        seg_results_frame.pack(fill=tk.X, pady=(5, 0))
-        
-        self.view_mask_button = ttk.Button(seg_results_frame, text="Ver Máscara", 
-                                          command=lambda: self.segmentation_helper.show_segmentation_result("mask_color"),
-                                          state="disabled")
-        self.view_mask_button.pack(side=tk.LEFT, padx=(0, 5))
-        
-        self.view_overlay_button = ttk.Button(seg_results_frame, text="Ver Overlay", 
-                                             command=lambda: self.segmentation_helper.show_segmentation_result("overlay"),
-                                             state="disabled")
-        self.view_overlay_button.pack(side=tk.LEFT, padx=(0, 5))
-        
-        self.view_ids_button = ttk.Button(seg_results_frame, text="Ver IDs", 
-                                         command=lambda: self.segmentation_helper.show_segmentation_result("mask_vis"),
-                                         state="disabled")
-        self.view_ids_button.pack(side=tk.LEFT)
+        self.undist_check = ttk.Checkbutton(
+            content,
+            text="Activar corrección",
+            variable=self.undistortion_enabled,
+            command=self.undistortion_helper.on_undistortion_toggle,
+        )
+        self.undist_check.grid(row=0, column=0, columnspan=3, sticky=tk.W)
+
+        ttk.Label(content, text="Alpha", style="Muted.TLabel").grid(row=1, column=0, sticky=tk.W, pady=(12, 0))
+        self.alpha_scale = ttk.Scale(content, from_=0.0, to=1.0, variable=self.undistortion_alpha, orient=tk.HORIZONTAL)
+        self.alpha_scale.grid(row=1, column=1, sticky=(tk.W, tk.E), padx=(10, 10), pady=(12, 0))
+
+        self.alpha_label = ttk.Label(content, text="1.00", style="Value.TLabel")
+        self.alpha_label.grid(row=1, column=2, sticky=tk.E, pady=(12, 0))
+
+        self.undistortion_alpha.trace("w", self.undistortion_helper.update_alpha_label)
+        self.alpha_scale.config(state="disabled")
+
+        button_row = ttk.Frame(content, style="PanelInner.TFrame")
+        button_row.grid(row=2, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=(12, 0))
+        button_row.columnconfigure((0, 1), weight=1)
+
+        self.view_undist_button = ttk.Button(
+            button_row,
+            text="Vista previa",
+            command=self.undistortion_helper.show_undistortion_preview,
+            state="disabled",
+            style="Compact.TButton",
+        )
+        self.view_undist_button.grid(row=0, column=0, sticky=(tk.W, tk.E), padx=(0, 6))
+
+        self.calib_info_button = ttk.Button(
+            button_row,
+            text="Parámetros",
+            command=self.undistortion_helper.show_calibration_info,
+            style="Compact.TButton",
+        )
+        self.calib_info_button.grid(row=0, column=1, sticky=(tk.W, tk.E))
+
+        self.load_calib_button = ttk.Button(
+            content,
+            text="Cargar calibración",
+            command=self.undistortion_helper.load_calibration,
+            style="Secondary.TButton",
+        )
+        self.load_calib_button.grid(row=3, column=0, columnspan=3, sticky=(tk.W, tk.E), pady=(8, 0))
 
     def _create_scale_frame(self, parent):
-        """Crear frame de configuración de escala"""
-        scale_frame = ttk.LabelFrame(parent, text="Configuración de Escala", padding="10")
-        scale_frame.grid(row=4, column=0, columnspan=3, pady=(0, 10), sticky=(tk.W, tk.E))
-        scale_frame.columnconfigure(3, weight=1)
-        
-        # Detección ArUco
-        aruco_frame = ttk.Frame(scale_frame)
-        aruco_frame.grid(row=0, column=0, columnspan=6, pady=(0, 10), sticky=(tk.W, tk.E))
-        
-        ttk.Label(aruco_frame, text="ArUco 4x4 (25mm):").pack(side=tk.LEFT, padx=(0, 5))
-        
-        self.detect_aruco_button = ttk.Button(aruco_frame, text="Detectar ArUco", 
-                                             command=self.aruco_helper.detect_aruco_scale, state="disabled")
-        self.detect_aruco_button.pack(side=tk.LEFT, padx=(0, 10))
-        
-        self.show_aruco_button = ttk.Button(aruco_frame, text="Ver Detección", 
-                                           command=self.aruco_helper.show_aruco_detection, state="disabled")
-        self.show_aruco_button.pack(side=tk.LEFT, padx=(0, 10))
-        
-        self.aruco_status_label = ttk.Label(aruco_frame, text="No detectado", 
-                                           font=("Arial", 9, "italic"))
-        self.aruco_status_label.pack(side=tk.LEFT, padx=(10, 0))
-        
-        # Separador
-        ttk.Separator(scale_frame, orient='horizontal').grid(row=1, column=0, columnspan=6, 
-                                                            sticky=(tk.W, tk.E), pady=5)
-        
-        # Campos para la conversión píxel-cm manual
-        ttk.Label(scale_frame, text="Relación manual:").grid(row=2, column=0, padx=(0, 5))
-        
-        self.pixels_entry = ttk.Entry(scale_frame, width=10)
-        self.pixels_entry.grid(row=2, column=1, padx=(0, 5))
-        self.pixels_entry.insert(0, "100")
-        
-        ttk.Label(scale_frame, text="píxeles =").grid(row=2, column=2, padx=(0, 5))
-        
-        self.cm_entry = ttk.Entry(scale_frame, width=10)
-        self.cm_entry.grid(row=2, column=3, padx=(0, 5))
-        self.cm_entry.insert(0, "1.0")
-        
-        ttk.Label(scale_frame, text="cm").grid(row=2, column=4, padx=(0, 10))
-        
-        self.calculate_scale_button = ttk.Button(scale_frame, text="Aplicar Escala Manual", 
-                                               command=self.scale_helper.calculate_scale)
-        self.calculate_scale_button.grid(row=2, column=5, padx=(0, 10))
-        
-        self.scale_info_label = ttk.Label(scale_frame, text="Escala actual: 1.0 cm/píxel", 
-                                         font=("Arial", 9, "italic"))
-        self.scale_info_label.grid(row=3, column=0, columnspan=6, pady=(5, 0), sticky=(tk.W))
+        content = self._create_step_card(parent, 3, "scale", 3, "Escala")
+        content.columnconfigure((0, 1), weight=1)
 
-    def _create_content_frame(self, parent):
-        """Crear frame de contenido principal"""
-        content_frame = ttk.Frame(parent)
-        content_frame.grid(row=5, column=0, columnspan=3, sticky=(tk.W, tk.E, tk.N, tk.S))
-        content_frame.columnconfigure(0, weight=2)
-        content_frame.columnconfigure(1, weight=1)
-        content_frame.rowconfigure(0, weight=1)
-        
-        # Frame para la imagen
-        image_frame = ttk.LabelFrame(content_frame, text="Imagen", padding="5")
-        image_frame.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S), padx=(0, 5))
+        ttk.Label(content, text="Automática ArUco 4x4", style="Muted.TLabel").grid(
+            row=0, column=0, columnspan=2, sticky=tk.W
+        )
+
+        self.detect_aruco_button = ttk.Button(
+            content,
+            text="Detectar ArUco",
+            command=self.aruco_helper.detect_aruco_scale,
+            state="disabled",
+            style="Compact.TButton",
+        )
+        self.detect_aruco_button.grid(row=1, column=0, sticky=(tk.W, tk.E), padx=(0, 6), pady=(8, 0))
+
+        self.show_aruco_button = ttk.Button(
+            content,
+            text="Ver detección",
+            command=self.aruco_helper.show_aruco_detection,
+            state="disabled",
+            style="Compact.TButton",
+        )
+        self.show_aruco_button.grid(row=1, column=1, sticky=(tk.W, tk.E), pady=(8, 0))
+
+        self.aruco_status_label = ttk.Label(content, text="No detectado", style="Muted.TLabel")
+        self.aruco_status_label.grid(row=2, column=0, columnspan=2, sticky=tk.W, pady=(6, 0))
+
+        ttk.Separator(content, orient="horizontal").grid(row=3, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=(12, 10))
+
+        manual_frame = ttk.Frame(content, style="PanelInner.TFrame")
+        manual_frame.grid(row=4, column=0, columnspan=2, sticky=(tk.W, tk.E))
+        manual_frame.columnconfigure((0, 2), weight=1)
+
+        ttk.Label(manual_frame, text="Relación manual", style="Muted.TLabel").grid(row=0, column=0, columnspan=4, sticky=tk.W)
+
+        self.pixels_entry = ttk.Entry(manual_frame, width=10)
+        self.pixels_entry.grid(row=1, column=0, sticky=(tk.W, tk.E), padx=(0, 6), pady=(6, 0))
+        self.pixels_entry.insert(0, "100")
+
+        ttk.Label(manual_frame, text="px =", style="Muted.TLabel").grid(row=1, column=1, sticky=tk.W, padx=(0, 6), pady=(6, 0))
+
+        self.cm_entry = ttk.Entry(manual_frame, width=10)
+        self.cm_entry.grid(row=1, column=2, sticky=(tk.W, tk.E), padx=(0, 6), pady=(6, 0))
+        self.cm_entry.insert(0, "1.0")
+
+        ttk.Label(manual_frame, text="cm", style="Muted.TLabel").grid(row=1, column=3, sticky=tk.W, pady=(6, 0))
+
+        self.calculate_scale_button = ttk.Button(
+            content,
+            text="Aplicar escala manual",
+            command=self.scale_helper.calculate_scale,
+            style="Secondary.TButton",
+        )
+        self.calculate_scale_button.grid(row=5, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=(10, 0))
+
+        self.scale_info_label = ttk.Label(content, text="Escala actual: 1.0000 cm/píxel", style="Muted.TLabel")
+        self.scale_info_label.grid(row=6, column=0, columnspan=2, pady=(8, 0), sticky=tk.W)
+
+    def _create_segmentation_frame(self, parent):
+        content = self._create_step_card(parent, 4, "segmentation", 4, "Segmentación")
+        content.columnconfigure(1, weight=1)
+
+        ttk.Label(content, text="Dispositivo", style="Muted.TLabel").grid(row=0, column=0, sticky=tk.W, padx=(0, 10))
+
+        self.device_var = tk.StringVar(value="cpu")
+        device_combo = ttk.Combobox(content, textvariable=self.device_var, values=["cpu", "cuda"], state="readonly", width=8)
+        device_combo.grid(row=0, column=1, sticky=(tk.W, tk.E))
+
+        self.segment_button = ttk.Button(
+            content,
+            text="Generar segmentación",
+            command=self.segmentation_helper.run_segmentation_async,
+            state="disabled",
+            style="Secondary.TButton",
+        )
+        self.segment_button.grid(row=1, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=(10, 0))
+
+        self.seg_progress_var = tk.StringVar(value="Listo")
+        self.seg_status_label = ttk.Label(content, textvariable=self.seg_progress_var, style="Muted.TLabel")
+        self.seg_status_label.grid(row=2, column=0, columnspan=2, sticky=tk.W, pady=(8, 0))
+
+        self.seg_progress_bar = ttk.Progressbar(content, mode="indeterminate")
+        self.seg_progress_bar.grid(row=3, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=(6, 10))
+
+        preview_row = ttk.Frame(content, style="PanelInner.TFrame")
+        preview_row.grid(row=4, column=0, columnspan=2, sticky=(tk.W, tk.E))
+        preview_row.columnconfigure((0, 1, 2), weight=1)
+
+        self.view_mask_button = ttk.Button(
+            preview_row,
+            text="Máscara",
+            command=lambda: self.segmentation_helper.show_segmentation_result("mask_color"),
+            state="disabled",
+            style="Compact.TButton",
+        )
+        self.view_mask_button.grid(row=0, column=0, sticky=(tk.W, tk.E), padx=(0, 6))
+
+        self.view_overlay_button = ttk.Button(
+            preview_row,
+            text="Overlay",
+            command=lambda: self.segmentation_helper.show_segmentation_result("overlay"),
+            state="disabled",
+            style="Compact.TButton",
+        )
+        self.view_overlay_button.grid(row=0, column=1, sticky=(tk.W, tk.E), padx=(0, 6))
+
+        self.view_ids_button = ttk.Button(
+            preview_row,
+            text="IDs",
+            command=lambda: self.segmentation_helper.show_segmentation_result("mask_vis"),
+            state="disabled",
+            style="Compact.TButton",
+        )
+        self.view_ids_button.grid(row=0, column=2, sticky=(tk.W, tk.E))
+
+    def _create_analysis_frame(self, parent):
+        content = self._create_step_card(parent, 5, "analysis", 5, "Análisis")
+
+        self.analyze_button = ttk.Button(
+            content,
+            text="Analizar morfología",
+            command=self.morphology_helper.analyze_image,
+            state="disabled",
+            style="Primary.TButton",
+        )
+        self.analyze_button.grid(row=0, column=0, sticky=(tk.W, tk.E))
+
+        self.analysis_hint_label = ttk.Label(content, text="Esperando segmentación", style="Muted.TLabel")
+        self.analysis_hint_label.grid(row=1, column=0, sticky=tk.W, pady=(8, 0))
+
+    def _create_image_workspace(self, parent):
+        image_frame = ttk.Frame(parent, style="Panel.TFrame", padding=14)
+        image_frame.grid(row=0, column=1, sticky=(tk.W, tk.E, tk.N, tk.S), padx=(0, 14))
         image_frame.columnconfigure(0, weight=1)
-        image_frame.rowconfigure(0, weight=1)
-        
-        self.image_canvas = tk.Canvas(image_frame, bg="white", width=700, height=500)
+        image_frame.rowconfigure(1, weight=1)
+
+        header = ttk.Frame(image_frame, style="PanelInner.TFrame")
+        header.grid(row=0, column=0, sticky=(tk.W, tk.E), pady=(0, 12))
+        header.columnconfigure(0, weight=1)
+
+        ttk.Label(header, text="Visor", style="CanvasTitle.TLabel").grid(row=0, column=0, sticky=tk.W)
+
+        self.original_image_button = ttk.Button(
+            header,
+            text="Original",
+            command=self.show_original_image,
+            state="disabled",
+            style="Compact.TButton",
+        )
+        self.original_image_button.grid(row=0, column=1, sticky=tk.E, padx=(0, 8))
+
+        self.image_state_label = tk.Label(
+            header,
+            text="Sin imagen",
+            bg=self.colors["pending_bg"],
+            fg=self.colors["pending_fg"],
+            padx=10,
+            pady=4,
+            font=self.fonts["small_bold"],
+        )
+        self.image_state_label.grid(row=0, column=2, sticky=tk.E)
+
+        canvas_shell = ttk.Frame(image_frame, style="Surface.TFrame", padding=10)
+        canvas_shell.grid(row=1, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
+        canvas_shell.columnconfigure(0, weight=1)
+        canvas_shell.rowconfigure(0, weight=1)
+
+        self.image_canvas = tk.Canvas(
+            canvas_shell,
+            bg=self.colors["canvas"],
+            width=760,
+            height=560,
+            highlightthickness=1,
+            highlightbackground=self.colors["border"],
+            relief="flat",
+        )
         self.image_canvas.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
-        
-        h_scrollbar = ttk.Scrollbar(image_frame, orient="horizontal", command=self.image_canvas.xview)
+        self.image_canvas.bind("<Configure>", self._schedule_canvas_redraw)
+
+        h_scrollbar = ttk.Scrollbar(canvas_shell, orient="horizontal", command=self.image_canvas.xview)
         h_scrollbar.grid(row=1, column=0, sticky=(tk.W, tk.E))
-        v_scrollbar = ttk.Scrollbar(image_frame, orient="vertical", command=self.image_canvas.yview)
+        v_scrollbar = ttk.Scrollbar(canvas_shell, orient="vertical", command=self.image_canvas.yview)
         v_scrollbar.grid(row=0, column=1, sticky=(tk.N, tk.S))
-        
         self.image_canvas.configure(xscrollcommand=h_scrollbar.set, yscrollcommand=v_scrollbar.set)
-        
-        # Frame para los resultados
-        results_frame = ttk.LabelFrame(content_frame, text="Resultados", padding="5")
-        results_frame.grid(row=0, column=1, sticky=(tk.W, tk.E, tk.N, tk.S), padx=(5, 0))
+
+    def _create_results_panel(self, parent):
+        results_frame = ttk.Frame(parent, style="Panel.TFrame", padding=14)
+        results_frame.grid(row=0, column=2, sticky=(tk.W, tk.E, tk.N, tk.S))
         results_frame.columnconfigure(0, weight=1)
-        results_frame.rowconfigure(1, weight=1)
-        
-        self.file_info = ttk.Label(results_frame, text="Ningún archivo seleccionado", 
-                                  font=("Arial", 10))
-        self.file_info.grid(row=0, column=0, pady=(0, 10), sticky=(tk.W, tk.E))
-        
+        results_frame.rowconfigure(3, weight=1)
+
+        ttk.Label(results_frame, text="Inspector", style="CanvasTitle.TLabel").grid(row=0, column=0, sticky=tk.W)
+
+        self.file_info = ttk.Label(results_frame, text="Ningún archivo seleccionado", style="Muted.TLabel", wraplength=320)
+        self.file_info.grid(row=1, column=0, sticky=(tk.W, tk.E), pady=(6, 14))
+
+        summary = ttk.Frame(results_frame, style="PanelInner.TFrame")
+        summary.grid(row=2, column=0, sticky=(tk.W, tk.E), pady=(0, 14))
+        summary.columnconfigure(1, weight=1)
+
+        self._create_fact_row(summary, 0, "Escala", "1.0000 cm/px", "scale")
+        self._create_fact_row(summary, 1, "Marcador", "No detectado", "marker")
+        self._create_fact_row(summary, 2, "Segmentación", "Pendiente", "segmentation")
+        self._create_fact_row(summary, 3, "Mediciones", "0", "measurements")
+
+        table_shell = ttk.Frame(results_frame, style="PanelInner.TFrame")
+        table_shell.grid(row=3, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
+        table_shell.columnconfigure(0, weight=1)
+        table_shell.rowconfigure(1, weight=1)
+
+        ttk.Label(table_shell, text="Resultados", style="Section.TLabel").grid(row=0, column=0, sticky=tk.W, pady=(0, 8))
+
         columns = ("Medición", "Píxeles", "Centímetros")
-        self.results_tree = ttk.Treeview(results_frame, columns=columns, show="headings", height=10)
-        
+        self.results_tree = ttk.Treeview(table_shell, columns=columns, show="headings", height=12)
         self.results_tree.heading("Medición", text="Medición")
         self.results_tree.heading("Píxeles", text="Píxeles")
         self.results_tree.heading("Centímetros", text="Centímetros")
-        self.results_tree.column("Medición", width=120)
-        self.results_tree.column("Píxeles", width=80)
-        self.results_tree.column("Centímetros", width=100)
-        
+        self.results_tree.column("Medición", width=142, anchor=tk.W)
+        self.results_tree.column("Píxeles", width=86, anchor=tk.E)
+        self.results_tree.column("Centímetros", width=104, anchor=tk.E)
+        self.results_tree.tag_configure("odd", background=self.colors["table_alt"], foreground=self.colors["text"])
+        self.results_tree.tag_configure("even", background=self.colors["table"], foreground=self.colors["text"])
+
         self.results_tree.grid(row=1, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
-        
-        tree_scrollbar = ttk.Scrollbar(results_frame, orient="vertical", command=self.results_tree.yview)
+
+        tree_scrollbar = ttk.Scrollbar(table_shell, orient="vertical", command=self.results_tree.yview)
         tree_scrollbar.grid(row=1, column=1, sticky=(tk.N, tk.S))
         self.results_tree.configure(yscrollcommand=tree_scrollbar.set)
 
+        self.save_button = ttk.Button(
+            results_frame,
+            text="Exportar resultados",
+            command=self.results_helper.save_results,
+            state="disabled",
+            style="Primary.TButton",
+        )
+        self.save_button.grid(row=4, column=0, sticky=(tk.W, tk.E), pady=(14, 0))
+
+    def _create_fact_row(self, parent, row, label, value, key):
+        ttk.Label(parent, text=label, style="Muted.TLabel").grid(row=row, column=0, sticky=tk.W, pady=3)
+        value_label = ttk.Label(parent, text=value, style="Value.TLabel")
+        value_label.grid(row=row, column=1, sticky=tk.E, pady=3)
+        self.summary_values[key] = value_label
+
     def _create_status_frame(self, parent):
-        """Crear frame de barra de estado"""
-        status_frame = ttk.Frame(parent)
-        status_frame.grid(row=6, column=0, columnspan=3, pady=(10, 0), sticky=(tk.W, tk.E))
-        status_frame.columnconfigure(0, weight=1)
-        
-        self.status_label = ttk.Label(status_frame, text="Listo para seleccionar imagen")
-        self.status_label.grid(row=0, column=0, sticky=(tk.W))
+        status_frame = ttk.Frame(parent, style="Status.TFrame", padding=(20, 10))
+        status_frame.grid(row=2, column=0, pady=(14, 0), sticky=(tk.W, tk.E))
+        status_frame.columnconfigure(1, weight=1)
+
+        self.status_dot = tk.Label(status_frame, text="", width=2, bg=self._status_dot_color("info"))
+        self.status_dot.grid(row=0, column=0, sticky=tk.W, padx=(0, 10))
+
+        self.status_label = ttk.Label(
+            status_frame,
+            text="Listo para seleccionar imagen",
+            style="Status.TLabel",
+            wraplength=820,
+        )
+        self.status_label.grid(row=0, column=1, sticky=tk.W)
+
+        self.status_context_label = ttk.Label(status_frame, text="FishMetrics", style="Status.TLabel")
+        self.status_context_label.grid(row=0, column=2, sticky=tk.E)
+
+    def _schedule_canvas_redraw(self, _event=None):
+        if self._resize_after_id:
+            self.root.after_cancel(self._resize_after_id)
+        self._resize_after_id = self.root.after(120, self._redraw_canvas)
+
+    def _redraw_canvas(self):
+        self._resize_after_id = None
+        if self.current_display_path:
+            self.image_display_helper.display_image(self.current_display_path)
+        else:
+            self._draw_empty_canvas()
+
+    def _draw_empty_canvas(self):
+        if not hasattr(self, "image_canvas"):
+            return
+        width = max(self.image_canvas.winfo_width(), 760)
+        height = max(self.image_canvas.winfo_height(), 560)
+        self.image_canvas.delete("all")
+        self.image_canvas.configure(scrollregion=(0, 0, width, height))
+        self.image_canvas.create_rectangle(0, 0, width, height, fill=self.colors["canvas"], outline="")
+        self.image_canvas.create_text(
+            width // 2,
+            height // 2 - 16,
+            text="Sin imagen",
+            fill=self.colors["text"],
+            font=self.fonts["hero"],
+        )
+        self.image_canvas.create_text(
+            width // 2,
+            height // 2 + 14,
+            text="Abre una imagen para iniciar el flujo de análisis",
+            fill=self.colors["muted"],
+            font=self.fonts["small"],
+        )
+
+    def set_status(self, text, kind="info", busy=False, toast=False):
+        self.status_kind = kind
+        if hasattr(self, "status_label"):
+            self.status_label.config(text=text)
+        self.set_busy(busy)
+
+        if hasattr(self, "status_dot"):
+            self.status_dot.config(bg=self._status_dot_color(kind))
+        if toast:
+            self.show_toast(text, kind)
+
+    def set_busy(self, busy):
+        self.root.configure(cursor="watch" if busy else "")
+
+    def _status_dot_color(self, kind):
+        status_colors = {
+            "info": self.colors["ready_fg"],
+            "active": self.colors["active_fg"],
+            "success": self.colors["success_fg"],
+            "warning": self.colors["warning_fg"],
+            "danger": self.colors["danger_fg"],
+        }
+        return status_colors.get(kind, self.colors["ready_fg"])
+
+    def show_toast(self, message, kind="info", duration=2800):
+        if not hasattr(self, "toast_label"):
+            return
+
+        palette = {
+            "info": (self.colors["ready_bg"], self.colors["ready_fg"]),
+            "active": (self.colors["active_bg"], self.colors["active_fg"]),
+            "success": (self.colors["success_bg"], self.colors["success_fg"]),
+            "warning": (self.colors["warning_bg"], self.colors["warning_fg"]),
+            "danger": (self.colors["danger_bg"], self.colors["danger_fg"]),
+        }
+        bg, fg = palette.get(kind, palette["info"])
+        self.toast_label.config(text=message, bg=bg, fg=fg)
+
+        if self._toast_after_id:
+            self.root.after_cancel(self._toast_after_id)
+        self._toast_after_id = self.root.after(duration, self._hide_toast)
+
+    def _hide_toast(self):
+        self._toast_after_id = None
+        if hasattr(self, "toast_label"):
+            self.toast_label.config(text="", bg=self.colors["panel"], fg=self.colors["panel"])
+
+    def _format_scale(self):
+        return f"{self.pixel_to_cm_ratio.get():.4f} cm/px"
+
+    def _sync_flow_state(self):
+        has_image = bool(self.current_image_path)
+        has_segmentation = bool(self.segmentation_results)
+        has_measurements = bool(self.measurements)
+        has_aruco = bool(self.aruco_detection and self.aruco_detection.get("detected"))
+        segmentation_ready = getattr(self.segmentation_helper, "requirements", {}).get("all_ready", False)
+
+        self._set_step_state("image", "done" if has_image else "pending", "Cargada" if has_image else "Pendiente")
+        self._set_step_state("optics", "done" if self.undistortion_enabled.get() else "ready", "Activa" if self.undistortion_enabled.get() else "Opcional")
+        if has_aruco:
+            self._set_step_state("scale", "done", "ArUco")
+        elif self.pixel_to_cm_ratio.get() != 1.0:
+            self._set_step_state("scale", "done", "Manual")
+        else:
+            self._set_step_state("scale", "ready", "Lista")
+
+        if has_segmentation:
+            self._set_step_state("segmentation", "done", "Completada")
+        elif has_image and segmentation_ready:
+            self._set_step_state("segmentation", "ready", "Lista")
+        elif segmentation_ready:
+            self._set_step_state("segmentation", "pending", "Pendiente")
+        else:
+            self._set_step_state("segmentation", "warning", "Falta modelo")
+
+        if has_measurements:
+            self._set_step_state("analysis", "done", "Medido")
+        elif has_segmentation:
+            self._set_step_state("analysis", "ready", "Listo")
+        else:
+            self._set_step_state("analysis", "pending", "Pendiente")
+
+        if hasattr(self, "header_state_label"):
+            if has_measurements:
+                self.header_state_label.config(text="Análisis completo", bg=self.colors["success_bg"], fg=self.colors["success_fg"])
+            elif has_segmentation:
+                self.header_state_label.config(text="Segmentado", bg=self.colors["ready_bg"], fg=self.colors["ready_fg"])
+            elif has_image:
+                self.header_state_label.config(text="Imagen cargada", bg=self.colors["ready_bg"], fg=self.colors["ready_fg"])
+            else:
+                self.header_state_label.config(text="Sin imagen", bg=self.colors["pending_bg"], fg=self.colors["pending_fg"])
+
+        if hasattr(self, "header_scale_label"):
+            self.header_scale_label.config(text=f"Escala {self._format_scale()}", bg=self.colors["ready_bg"], fg=self.colors["ready_fg"])
+
+        if hasattr(self, "image_state_label"):
+            if self.current_display_path:
+                display_name = os.path.basename(str(self.current_display_path))
+                self.image_state_label.config(text=display_name[:34], bg=self.colors["ready_bg"], fg=self.colors["ready_fg"])
+            else:
+                self.image_state_label.config(text="Sin imagen", bg=self.colors["pending_bg"], fg=self.colors["pending_fg"])
+
+        if hasattr(self, "analysis_hint_label"):
+            if has_measurements:
+                self.analysis_hint_label.config(text="Mediciones disponibles")
+            elif has_segmentation:
+                self.analysis_hint_label.config(text="Segmentación lista para medir")
+            elif has_image:
+                self.analysis_hint_label.config(text="Genera segmentación para medir")
+            else:
+                self.analysis_hint_label.config(text="Esperando imagen")
+
+        if self.summary_values:
+            self.summary_values["scale"].config(text=self._format_scale())
+            self.summary_values["marker"].config(text="Detectado" if has_aruco else "No detectado")
+            self.summary_values["segmentation"].config(text="Completada" if has_segmentation else "Pendiente")
+            self.summary_values["measurements"].config(text=str(len(self.measurements or {})))
+
+    def show_original_image(self):
+        if not self.current_image_path:
+            return
+        self.display_image(self.current_image_path)
+        self.set_status("Mostrando imagen original", kind="info")
 
     # Métodos principales
     def select_image(self):
-        """Seleccionar una imagen para analizar"""
+        """Seleccionar una imagen para analizar."""
         file_types = [
             ("Imágenes", "*.png *.jpg *.jpeg *.bmp *.tiff"),
             ("PNG", "*.png"),
             ("JPEG", "*.jpg *.jpeg"),
-            ("Todos los archivos", "*.*")
+            ("Todos los archivos", "*.*"),
         ]
-        
+
         filename = filedialog.askopenfilename(
             title="Seleccionar imagen de pez",
             filetypes=file_types,
-            initialdir=os.path.dirname(os.path.abspath(__file__))
+            initialdir=os.path.dirname(os.path.abspath(__file__)),
         )
-        
+
         if filename:
             self.current_image_path = filename
-            self.file_info.config(text=f"Archivo: {os.path.basename(filename)}")
-            self.status_label.config(text="Imagen seleccionada. Puede detectar ArUco, generar segmentación o analizar directamente.")
-            
-            # Habilitar botones
+            basename = os.path.basename(filename)
+
+            self.results_helper.clear_results()
+            self.file_info.config(text=f"Archivo: {basename}")
+            self.file_quick_label.config(text=basename)
+
             self.analyze_button.config(state="normal")
             self.detect_aruco_button.config(state="normal")
-            
-            # Habilitar vista previa de corrección si está habilitada
+            self.original_image_button.config(state="normal")
+
             if self.undistortion_enabled.get():
                 self.view_undist_button.config(state="normal")
-            
+
             if self.segmentation_helper.requirements["all_ready"]:
                 self.segment_button.config(state="normal")
-            
+
             self.display_image(filename)
-            self.results_helper.clear_results()
+            self.set_status(
+                "Imagen seleccionada",
+                kind="success",
+                toast=True,
+            )
+            self._sync_flow_state()
 
     def get_processed_image_path(self):
         """
@@ -334,16 +1031,14 @@ class FishMorphologyGUI:
 
         try:
             import cv2
-            # Cargar imagen original
+
             original = cv2.imread(self.current_image_path)
             if original is None:
                 return self.current_image_path
 
-            # Aplicar corrección
             alpha = self.undistortion_alpha.get()
             undistorted = self.undistorter.undistort_image(original, alpha)
 
-            # Guardar imagen corregida temporalmente
             corrected_path = "temp_undistorted.png"
             cv2.imwrite(corrected_path, undistorted)
 
@@ -354,5 +1049,7 @@ class FishMorphologyGUI:
             return self.current_image_path
 
     def display_image(self, image_path):
-        """Mostrar una imagen en el canvas (delegado al helper)"""
-        self.image_display_helper.display_image(image_path)
+        """Mostrar una imagen en el canvas (delegado al helper)."""
+        self.current_display_path = str(image_path)
+        self.image_display_helper.display_image(str(image_path))
+        self._sync_flow_state()
