@@ -50,6 +50,10 @@ Desde la raíz del repositorio:
 python src/main.py
 ```
 
+Al iniciar por primera vez se crea `config.ini` en la raíz del proyecto. Las
+preferencias personales, como el tema claro u oscuro, se guardan allí y se
+restauran automáticamente en la siguiente ejecución.
+
 ---
 
 ## 🖥️ Uso de la GUI
@@ -66,7 +70,9 @@ python src/main.py
 ### Escala
 
 **Automática**
-- Usar **Detectar ArUco** (marcador 4x4 de **100 mm** por defecto)
+- Medir el lado exterior del marcador cuadrado
+- Ingresar esa medida y seleccionar **mm** o **cm**
+- Usar **Detectar ArUco** (no se asume ninguna dimensión)
 - Botón **“Ver Detección”** para previsualizar
 
 **Manual**
@@ -123,8 +129,9 @@ Las mediciones se muestran en **píxeles** y se convierten a **cm** según la es
 
 ## 🎯 Notas de calibración y ArUco
 
-- ArUco esperado: **4x4 – 100 mm**
-- Ajustar tamaño en `utils.detect_aruco_marker` si se usa otro
+- ArUco esperado: diccionario **4x4_50**
+- La longitud real de un lado es obligatoria y se ingresa en la interfaz
+- Medir el cuadrado de borde exterior a borde exterior; no se asume un tamaño predeterminado
 - Para **SIMPLE_PINHOLE vía YAML**:
   - `model: SIMPLE_PINHOLE`
   - Parámetros: `[f, cx, cy]`
@@ -164,5 +171,3 @@ python seg/infer2_seg.py --ckpt seg/best_miou_V5.pth --input sample.jpg --out pr
 ```
 
 ---
-
-

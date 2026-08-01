@@ -61,11 +61,14 @@ class SegmentationHelper:
             self.gui.set_status("Segmentación exitosa", kind="success", toast=True)
             self.gui._sync_flow_state()
         else:
-            from tkinter import messagebox
             self.gui.seg_progress_var.set("Error en segmentación")
-            self.gui.set_status(f"Error: {result.get('error', 'Error desconocido')}", kind="danger", toast=True)
+            self.gui.set_status("No se pudo completar la segmentación", kind="danger", toast=True)
             self.gui._sync_flow_state()
-            messagebox.showerror("Error de Segmentación", result.get("message", "Error desconocido"))
+            self.gui.show_error(
+                "No se pudo segmentar la imagen",
+                "FishMetrics no pudo separar el pez del fondo. Comprueba que el modelo de segmentación esté disponible y vuelve a intentarlo; si usaste GPU, también puedes probar con CPU.",
+                details=result.get("error", "El proceso no devolvió información técnica adicional."),
+            )
     
     def show_segmentation_result(self, result_type):
         """Muestra un resultado específico de la segmentación."""
@@ -79,9 +82,13 @@ class SegmentationHelper:
             self.gui.display_image(str(file_path))
             self.gui.set_status(f"Mostrando: {result_type}", kind="info")
         else:
-            from tkinter import messagebox
-            messagebox.showerror("Error", f"Archivo no encontrado: {result_type}")
-            self.gui.set_status(f"Archivo no encontrado: {result_type}", kind="danger", toast=True)
+            expected_path = str(file_path) if file_path else "No se recibió una ruta"
+            self.gui.show_error(
+                "No se pudo mostrar el resultado",
+                "El archivo generado para esta vista no está disponible. Ejecuta nuevamente la segmentación para volver a crearlo.",
+                details=f"Tipo de resultado: {result_type}\nRuta esperada: {expected_path}",
+            )
+            self.gui.set_status("No se encontró el resultado de segmentación", kind="danger", toast=True)
 
     def run_segmentation_and_analyze_async(self):
         """Ejecuta segmentación y luego análisis automáticamente"""

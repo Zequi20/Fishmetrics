@@ -71,7 +71,11 @@ class ResultsHelper:
                 self.gui.set_status("Resultados guardados exitosamente", kind="success", toast=True)
                 
             except Exception as e:
-                messagebox.showerror("Error", f"No se pudieron guardar los resultados: {str(e)}")
+                self.gui.show_error(
+                    "No se pudieron guardar los resultados",
+                    "FishMetrics no pudo crear el archivo. Verifica que la carpeta exista, que tengas permiso para escribir en ella y vuelve a intentarlo.",
+                    details=f"Destino: {filename}\n{type(e).__name__}: {e}",
+                )
                 self.gui.set_status("No se pudieron guardar los resultados", kind="danger", toast=True)
     
     def _write_results_to_file(self, filename):
@@ -101,8 +105,12 @@ class ResultsHelper:
             if self.gui.aruco_detection and self.gui.aruco_detection["detected"]:
                 f.write("Método de escala: Detección automática ArUco\n")
                 f.write(f"Marcador detectado: ID {self.gui.aruco_detection['marker_id']}\n")
-                f.write(f"Tamaño del marcador: {self.gui.aruco_detection['marker_size_mm']} mm\n")
-                f.write(f"Tamaño en píxeles: {self.gui.aruco_detection['marker_size_pixels']:.1f} px\n")
+                f.write(
+                    f"Lado real indicado: {self.gui.aruco_detection['marker_size_input']:g} "
+                    f"{self.gui.aruco_detection['marker_size_unit']}\n"
+                )
+                f.write(f"Lado normalizado: {self.gui.aruco_detection['marker_size_mm']:g} mm\n")
+                f.write(f"Lado detectado en la imagen: {self.gui.aruco_detection['marker_size_pixels']:.1f} px\n")
                 f.write(f"Factor de conversión: {cm_per_pixel:.4f} cm/píxel\n\n")
             else:
                 f.write("Método de escala: Configuración manual\n")

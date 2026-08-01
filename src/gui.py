@@ -2,6 +2,7 @@ import os
 import tkinter as tk
 from tkinter import ttk, filedialog
 
+from app_config import AppConfig
 from undistortion import CameraUndistortion
 
 from helpers.segmentation import SegmentationHelper
@@ -11,15 +12,19 @@ from helpers.results import ResultsHelper
 from helpers.undistortion import UndistortionHelper
 from helpers.morphology import MorphologyHelper
 from helpers.scale import ScaleHelper
+from helpers.dialogs import show_error
 
 
 class FishMorphologyGUI:
-    def __init__(self, root):
+    def __init__(self, root, config_path=None):
         self.root = root
         self.root.title("FishMetrics - Workbench de análisis")
         self.root.geometry("1440x920")
         self.root.minsize(1180, 760)
         self.root.option_add("*tearOff", False)
+
+        # Preferencias persistentes
+        self.config = AppConfig(config_path)
 
         # Variables de dominio
         self.current_image_path = None
@@ -37,7 +42,9 @@ class FishMorphologyGUI:
         self.undistortion_alpha = tk.DoubleVar(value=1.0)
 
         # Estado visual
-        self.theme_name = "light"
+        saved_theme = self.config.get("appearance", "theme", fallback="light").strip().lower()
+        theme_was_invalid = saved_theme not in ("light", "dark")
+        self.theme_name = "light" if theme_was_invalid else saved_theme
         self.status_kind = "info"
         self.step_widgets = {}
         self.summary_values = {}
@@ -56,6 +63,20 @@ class FishMorphologyGUI:
         self.create_widgets()
         self.segmentation_helper.check_segmentation_status()
         self._sync_flow_state()
+
+        if self.config.load_error:
+            self.root.after_idle(
+                lambda error=self.config.load_error: self._show_config_load_error(error)
+            )
+        elif self.config.write_error:
+            self.root.after_idle(
+                lambda error=self.config.write_error: self._show_config_write_error(error)
+            )
+        elif theme_was_invalid:
+            try:
+                self.config.set("appearance", "theme", self.theme_name)
+            except OSError as error:
+                self.root.after_idle(lambda error=error: self._show_config_write_error(error))
 
     def create_widgets(self):
         self._configure_styles()
@@ -321,7 +342,7 @@ class FishMorphologyGUI:
 
         self.theme_toggle_button = ttk.Button(
             status_area,
-            text="Modo oscuro",
+            text="Modo claro" if self.theme_name == "dark" else "Modo oscuro",
             command=self.toggle_theme,
             style="Compact.TButton",
         )
@@ -410,6 +431,25 @@ class FishMorphologyGUI:
 
         theme_label = "oscuro" if theme_name == "dark" else "claro"
         self.show_toast(f"Modo {theme_label} aplicado", kind="success")
+
+        try:
+            self.config.set("appearance", "theme", theme_name)
+        except OSError as error:
+            self._show_config_write_error(error)
+
+    def _show_config_load_error(self, error):
+        self.show_error(
+            "No se pudo leer la configuración",
+            "FishMetrics inició con sus preferencias predeterminadas porque config.ini está dañado o no se puede leer. Puedes corregir el archivo o eliminarlo para que se genere nuevamente.",
+            details=f"Archivo: {self.config.path}\n{type(error).__name__}: {error}",
+        )
+
+    def _show_config_write_error(self, error):
+        self.show_error(
+            "No se pudo guardar la configuración",
+            "La preferencia se aplicó durante esta sesión, pero FishMetrics no podrá recordarla al volver a abrirse. Comprueba los permisos de la carpeta del programa.",
+            details=f"Archivo: {self.config.path}\n{type(error).__name__}: {error}",
+        )
 
     def _refresh_theme_widgets(self):
         self.root.configure(bg=self.colors["bg"])
@@ -563,6 +603,34 @@ class FishMorphologyGUI:
             row=0, column=0, columnspan=2, sticky=tk.W
         )
 
+        marker_size_frame = ttk.Frame(content, style="PanelInner.TFrame")
+        marker_size_frame.grid(row=1, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=(8, 0))
+        marker_size_frame.columnconfigure(0, weight=1)
+
+        ttk.Label(marker_size_frame, text="Lado exterior del marcador", style="Muted.TLabel").grid(
+            row=0, column=0, columnspan=2, sticky=tk.W
+        )
+
+        self.aruco_size_entry = ttk.Entry(marker_size_frame, width=12)
+        self.aruco_size_entry.grid(row=1, column=0, sticky=(tk.W, tk.E), padx=(0, 6), pady=(6, 0))
+
+        self.aruco_size_unit_var = tk.StringVar(value="mm")
+        self.aruco_size_unit_combo = ttk.Combobox(
+            marker_size_frame,
+            textvariable=self.aruco_size_unit_var,
+            values=("mm", "cm"),
+            state="readonly",
+            width=5,
+        )
+        self.aruco_size_unit_combo.grid(row=1, column=1, sticky=tk.E, pady=(6, 0))
+
+        ttk.Label(
+            marker_size_frame,
+            text="Mide un lado del cuadrado, de borde exterior a borde exterior.",
+            style="Muted.TLabel",
+            wraplength=280,
+        ).grid(row=2, column=0, columnspan=2, sticky=tk.W, pady=(5, 0))
+
         self.detect_aruco_button = ttk.Button(
             content,
             text="Detectar ArUco",
@@ -570,7 +638,7 @@ class FishMorphologyGUI:
             state="disabled",
             style="Compact.TButton",
         )
-        self.detect_aruco_button.grid(row=1, column=0, sticky=(tk.W, tk.E), padx=(0, 6), pady=(8, 0))
+        self.detect_aruco_button.grid(row=2, column=0, sticky=(tk.W, tk.E), padx=(0, 6), pady=(10, 0))
 
         self.show_aruco_button = ttk.Button(
             content,
@@ -579,15 +647,15 @@ class FishMorphologyGUI:
             state="disabled",
             style="Compact.TButton",
         )
-        self.show_aruco_button.grid(row=1, column=1, sticky=(tk.W, tk.E), pady=(8, 0))
+        self.show_aruco_button.grid(row=2, column=1, sticky=(tk.W, tk.E), pady=(10, 0))
 
         self.aruco_status_label = ttk.Label(content, text="No detectado", style="Muted.TLabel")
-        self.aruco_status_label.grid(row=2, column=0, columnspan=2, sticky=tk.W, pady=(6, 0))
+        self.aruco_status_label.grid(row=3, column=0, columnspan=2, sticky=tk.W, pady=(6, 0))
 
-        ttk.Separator(content, orient="horizontal").grid(row=3, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=(12, 10))
+        ttk.Separator(content, orient="horizontal").grid(row=4, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=(12, 10))
 
         manual_frame = ttk.Frame(content, style="PanelInner.TFrame")
-        manual_frame.grid(row=4, column=0, columnspan=2, sticky=(tk.W, tk.E))
+        manual_frame.grid(row=5, column=0, columnspan=2, sticky=(tk.W, tk.E))
         manual_frame.columnconfigure((0, 2), weight=1)
 
         ttk.Label(manual_frame, text="Relación manual", style="Muted.TLabel").grid(row=0, column=0, columnspan=4, sticky=tk.W)
@@ -610,10 +678,10 @@ class FishMorphologyGUI:
             command=self.scale_helper.calculate_scale,
             style="Secondary.TButton",
         )
-        self.calculate_scale_button.grid(row=5, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=(10, 0))
+        self.calculate_scale_button.grid(row=6, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=(10, 0))
 
         self.scale_info_label = ttk.Label(content, text="Escala actual: 1.0000 cm/píxel", style="Muted.TLabel")
-        self.scale_info_label.grid(row=6, column=0, columnspan=2, pady=(8, 0), sticky=tk.W)
+        self.scale_info_label.grid(row=7, column=0, columnspan=2, pady=(8, 0), sticky=tk.W)
 
     def _create_segmentation_frame(self, parent):
         content = self._create_step_card(parent, 4, "segmentation", 4, "Segmentación")
@@ -865,6 +933,10 @@ class FishMorphologyGUI:
             self.status_dot.config(bg=self._status_dot_color(kind))
         if toast:
             self.show_toast(text, kind)
+
+    def show_error(self, title, message, details=None):
+        """Muestra un mensaje claro y mantiene los detalles técnicos contraídos."""
+        return show_error(self, title, message, details)
 
     def set_busy(self, busy):
         self.root.configure(cursor="watch" if busy else "")

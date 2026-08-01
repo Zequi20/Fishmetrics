@@ -46,13 +46,20 @@ def create_default_calibration_file(filename="camera_calibration.json"):
     print(f"Archivo de calibración por defecto creado: {filename}")
     return filename
 
-def detect_aruco_marker(image_path, marker_size_mm=25):
-    print(f"MMarker size mm: {marker_size_mm}")
+def detect_aruco_marker(image_path, marker_size_mm):
     """
-    Detecta marcadores ArUco 4x4_50 en la imagen y calcula la escala.
-    Versión corregida para cálculo preciso de escala.
+    Detecta marcadores ArUco 4x4_50 y calcula la escala usando el lado real
+    proporcionado explícitamente por la persona usuaria.
+
+    Args:
+        image_path (str): Ruta de la imagen que contiene el marcador.
+        marker_size_mm (float): Longitud real de un lado exterior, en milímetros.
     """
     try:
+        marker_size_mm = float(marker_size_mm)
+        if not np.isfinite(marker_size_mm) or marker_size_mm <= 0:
+            raise ValueError("marker_size_mm debe ser un número finito mayor que cero")
+
         # Cargar la imagen
         image = cv2.imread(image_path)
         if image is None:
@@ -65,13 +72,13 @@ def detect_aruco_marker(image_path, marker_size_mm=25):
         aruco_dict = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_4X4_50)
         parameters = cv2.aruco.DetectorParameters()
         
-        # Parámetros optimizados para marcadores pequeños (25mm)
+        # Parámetros optimizados para marcadores pequeños en la imagen.
         parameters.adaptiveThreshWinSizeMin = 3
         parameters.adaptiveThreshWinSizeMax = 23
         parameters.adaptiveThreshWinSizeStep = 10
         parameters.adaptiveThreshConstant = 7
         
-        # Parámetros de contorno más restrictivos para marcadores pequeños
+        # Parámetros de contorno para marcadores pequeños.
         parameters.minMarkerPerimeterRate = 0.02  # Más restrictivo
         parameters.maxMarkerPerimeterRate = 4.0
         parameters.polygonalApproxAccuracyRate = 0.05  # Más preciso
@@ -112,7 +119,7 @@ def detect_aruco_marker(image_path, marker_size_mm=25):
             side4 = np.linalg.norm(marker_corners[0] - marker_corners[3])  # Lado izquierdo
             
             # Promedio de todos los lados para mayor precisión
-            marker_size_pixels = (side1 + side2 + side3 + side4) / 4
+            marker_size_pixels = float((side1 + side2 + side3 + side4) / 4)
             
             # Calcular la escala: mm por píxel (más directo)
             mm_per_pixel = marker_size_mm / marker_size_pixels
@@ -137,7 +144,7 @@ def detect_aruco_marker(image_path, marker_size_mm=25):
             return {
                 "detected": True,
                 "marker_id": int(marker_id),
-                "marker_size_pixels": float(marker_size_pixels),
+                "marker_size_pixels": marker_size_pixels,
                 "marker_size_mm": marker_size_mm,
                 "marker_size_cm": marker_size_mm / 10,
                 "mm_per_pixel": float(mm_per_pixel),
@@ -325,7 +332,7 @@ def run_segmentation(input_image_path, output_dir="preds", device="cpu"):
         return {
             "success": False,
             "error": str(e),
-            "message": f"Error en segmentación: {str(e)}"
+            "message": "No se pudo completar la segmentación."
         }
 
 def check_segmentation_requirements():

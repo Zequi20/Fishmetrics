@@ -1,6 +1,3 @@
-import tkinter as tk
-from tkinter import messagebox
-
 class ScaleHelper:
     def __init__(self, gui):
         self.gui = gui
@@ -12,7 +9,11 @@ class ScaleHelper:
             cm = float(self.gui.cm_entry.get())
             
             if pixels <= 0 or cm <= 0:
-                messagebox.showerror("Error", "Los valores deben ser positivos")
+                self.gui.show_error(
+                    "No se pudo aplicar la escala",
+                    "La cantidad de píxeles y la medida en centímetros deben ser mayores que cero. Corrige ambos valores e inténtalo nuevamente.",
+                    details=f"Valores recibidos: píxeles={pixels!r}, centímetros={cm!r}",
+                )
                 self.gui.set_status("Los valores de escala deben ser positivos", kind="danger", toast=True)
                 return
             
@@ -28,6 +29,10 @@ class ScaleHelper:
             self.gui.set_status(f"Escala manual aplicada: {pixels} píxeles = {cm} cm", kind="success", toast=True)
             self.gui._sync_flow_state()
             
-        except ValueError:
-            messagebox.showerror("Error", "Por favor ingrese valores numéricos válidos")
+        except ValueError as error:
+            self.gui.show_error(
+                "No se pudo aplicar la escala",
+                "Usa solamente números en los campos de píxeles y centímetros. Por ejemplo: 250 y 10.",
+                details=f"Error de conversión: {error}\nPíxeles: {self.gui.pixels_entry.get()!r}\nCentímetros: {self.gui.cm_entry.get()!r}",
+            )
             self.gui.set_status("Valores de escala inválidos", kind="danger", toast=True)

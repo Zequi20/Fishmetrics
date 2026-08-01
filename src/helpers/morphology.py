@@ -23,7 +23,11 @@ class MorphologyHelper:
         
         mask_path = self.gui.segmentation_results.get("mask_color")
         if not mask_path or not mask_path.exists():
-            messagebox.showerror("Error", "No se encontró la máscara de segmentación")
+            self.gui.show_error(
+                "No se puede iniciar la medición",
+                "Falta la máscara que identifica al pez. Ejecuta nuevamente la segmentación y después vuelve a analizar la imagen.",
+                details=f"Ruta esperada de la máscara: {mask_path or 'no informada'}",
+            )
             return
         
         try:
@@ -47,12 +51,20 @@ class MorphologyHelper:
                 self.gui.save_button.config(state="normal")
                 self.gui._sync_flow_state()
             else:
-                messagebox.showerror("Error", "No se pudieron obtener mediciones de la imagen")
+                self.gui.show_error(
+                    "No se encontraron medidas válidas",
+                    "La imagen se procesó, pero no fue posible reconocer una silueta de pez medible. Revisa la máscara de segmentación e intenta con una imagen más clara.",
+                    details=f"El análisis no devolvió mediciones. Máscara utilizada: {mask_path}",
+                )
                 self.gui.set_status("Error en el análisis", kind="danger", toast=True)
                 self.gui._sync_flow_state()
                 
         except Exception as e:
-            messagebox.showerror("Error", f"Error durante el análisis: {str(e)}")
+            self.gui.show_error(
+                "No se pudo completar la medición",
+                "Ocurrió un problema mientras se calculaban las medidas. Comprueba la segmentación e inténtalo nuevamente.",
+                details=f"{type(e).__name__}: {e}\nMáscara utilizada: {mask_path}",
+            )
             self.gui.set_status("Error en el análisis", kind="danger", toast=True)
             self.gui._sync_flow_state()
         finally:

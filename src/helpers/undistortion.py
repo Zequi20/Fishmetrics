@@ -55,7 +55,14 @@ class UndistortionHelper:
                 
                 if model != "SIMPLE_PINHOLE" or not parameters or len(parameters) < 3:
                     self.gui.set_status("Formato de calibración no compatible", kind="danger", toast=True)
-                    messagebox.showerror("Error", "Formato de archivo de calibración no válido o incompatible")
+                    self.gui.show_error(
+                        "Archivo de calibración no compatible",
+                        "El archivo no contiene una calibración que FishMetrics pueda usar. Selecciona un YAML con el modelo SIMPLE_PINHOLE y sus parámetros de cámara.",
+                        details=(
+                            f"Archivo: {filename}\nModelo recibido: {model!r}\n"
+                            f"Cantidad de parámetros: {len(parameters) if isinstance(parameters, list) else 'formato no válido'}"
+                        ),
+                    )
                     return
                 
                 # Extract the camera parameters
@@ -77,11 +84,19 @@ class UndistortionHelper:
                     messagebox.showinfo("Éxito", "Calibración YAML cargada correctamente")
                 else:
                     self.gui.set_status("No se pudo cargar el archivo de calibración", kind="danger", toast=True)
-                    messagebox.showerror("Error", "No se pudo cargar el archivo de calibración")
+                    self.gui.show_error(
+                        "No se pudo aplicar la calibración",
+                        "El archivo parece válido, pero sus parámetros no pudieron aplicarse. Revisa que el tamaño de imagen y los valores de cámara estén completos.",
+                        details=f"Archivo: {filename}\nModelo: {model}\nTamaño declarado: {width} x {height}\nParámetros: {parameters!r}",
+                    )
             
             except Exception as e:
                 self.gui.set_status("Error al leer el archivo YAML", kind="danger", toast=True)
-                messagebox.showerror("Error", f"Error al leer el archivo YAML: {str(e)}")
+                self.gui.show_error(
+                    "No se pudo leer la calibración",
+                    "FishMetrics no pudo interpretar el archivo seleccionado. Comprueba que sea un YAML válido y vuelve a intentarlo.",
+                    details=f"Archivo: {filename}\n{type(e).__name__}: {e}",
+                )
     
     def show_calibration_info(self):
         """Muestra información sobre la calibración actual."""
@@ -122,7 +137,11 @@ Tamaño de imagen: {info.get('image_size', 'No definido')}"""
             # Cargar imagen original
             original = cv2.imread(self.gui.current_image_path)
             if original is None:
-                messagebox.showerror("Error", "No se pudo cargar la imagen")
+                self.gui.show_error(
+                    "No se pudo preparar la vista previa",
+                    "La imagen original ya no puede abrirse. Comprueba que el archivo exista y no esté dañado, o selecciona otra imagen.",
+                    details=f"OpenCV no pudo cargar: {self.gui.current_image_path}",
+                )
                 self.gui.set_status("No se pudo cargar la imagen", kind="danger", toast=True)
                 return
             
@@ -159,7 +178,11 @@ Tamaño de imagen: {info.get('image_size', 'No definido')}"""
             self.gui.set_status("Vista previa de corrección mostrada", kind="success", toast=True)
             
         except Exception as e:
-            messagebox.showerror("Error", f"Error al generar vista previa: {str(e)}")
+            self.gui.show_error(
+                "No se pudo generar la vista previa",
+                "Ocurrió un problema al corregir la distorsión de la imagen. Revisa la calibración activa y vuelve a intentarlo.",
+                details=f"{type(e).__name__}: {e}\nImagen: {self.gui.current_image_path}",
+            )
             self.gui.set_status("Error en vista previa", kind="danger", toast=True)
         finally:
             self.gui.set_busy(False)

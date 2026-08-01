@@ -1,6 +1,5 @@
 import tkinter as tk
 from PIL import Image, ImageTk
-from tkinter import messagebox
 
 class ImageDisplayHelper:
     def __init__(self, gui):
@@ -48,7 +47,12 @@ class ImageDisplayHelper:
             self.gui.image_canvas.configure(scrollregion=(0, 0, scroll_width, scroll_height))
             
         except Exception as e:
-            messagebox.showerror("Error", f"No se pudo cargar la imagen: {str(e)}")
+            self.gui.show_error(
+                "No se pudo abrir la imagen",
+                "El archivo no pudo mostrarse. Comprueba que sea una imagen válida, que no esté dañada y que aún se encuentre disponible.",
+                details=f"Archivo: {image_path}\n{type(e).__name__}: {e}",
+            )
+            self.gui.set_status("No se pudo abrir la imagen seleccionada", kind="danger", toast=True)
 
     @staticmethod
     def resize_image_for_display(image_path, max_width=700, max_height=500):

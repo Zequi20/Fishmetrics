@@ -11,3 +11,4 @@ med/
 *.jpg
 *.txt
 .venv/
+config.ini
