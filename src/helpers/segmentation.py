@@ -49,6 +49,8 @@ class SegmentationHelper:
             self.gui.segment_button.config(state="normal")
         
         if result["success"]:
+            # Una máscara nueva requiere volver a calcular la morfometría.
+            self.gui.results_helper.clear_measurements(sync=False)
             self.gui.segmentation_results = result["files"]
             correction_text = " (con corrección)" if self.gui.undistortion_enabled.get() else ""
             self.gui.seg_progress_var.set(f"Segmentación completada{correction_text}")

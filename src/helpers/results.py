@@ -24,32 +24,38 @@ class ResultsHelper:
     
     def clear_results(self):
         """Limpiar los resultados mostrados"""
-        for item in self.gui.results_tree.get_children():
-            self.gui.results_tree.delete(item)
-        self.gui.save_button.config(state="disabled")
-        self.gui.measurements = None
-        self.gui.annotated_image = None
+        self.clear_measurements(sync=False)
         self.gui.segmentation_results = None
         self.gui.aruco_detection = None
-        
+
         # Deshabilitar solo botones de visualización
         self.gui.view_mask_button.config(state="disabled")
         self.gui.view_overlay_button.config(state="disabled")
         self.gui.view_ids_button.config(state="disabled")
         self.gui.show_aruco_button.config(state="disabled")
-        
+
         # Manejar botón de vista previa de corrección
         if self.gui.undistortion_enabled.get() and self.gui.current_image_path:
             self.gui.view_undist_button.config(state="normal")
         else:
             self.gui.view_undist_button.config(state="disabled")
-        
+
         # NO deshabilitar detect_aruco_button si hay una imagen cargada
         if not self.gui.current_image_path:
             self.gui.detect_aruco_button.config(state="disabled")
-        
+
         self.gui.aruco_status_label.config(text="No detectado")
         self.gui._sync_flow_state()
+
+    def clear_measurements(self, sync=True):
+        """Elimina solo la morfometría y conserva imagen, escala y segmentación."""
+        for item in self.gui.results_tree.get_children():
+            self.gui.results_tree.delete(item)
+        self.gui.save_button.config(state="disabled")
+        self.gui.measurements = None
+        self.gui.annotated_image = None
+        if sync:
+            self.gui._sync_flow_state()
     
     def save_results(self):
         """Guardar los resultados en un archivo de texto"""

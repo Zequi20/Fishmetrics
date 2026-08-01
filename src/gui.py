@@ -46,6 +46,7 @@ class FishMorphologyGUI:
         theme_was_invalid = saved_theme not in ("light", "dark")
         self.theme_name = "light" if theme_was_invalid else saved_theme
         self.status_kind = "info"
+        self.analysis_running = False
         self.step_widgets = {}
         self.summary_values = {}
         self._toast_after_id = None
@@ -745,7 +746,7 @@ class FishMorphologyGUI:
 
         self.analyze_button = ttk.Button(
             content,
-            text="Analizar morfología",
+            text="Analizar morfometría",
             command=self.morphology_helper.analyze_image,
             state="disabled",
             style="Primary.TButton",
@@ -1009,6 +1010,16 @@ class FishMorphologyGUI:
         else:
             self._set_step_state("analysis", "pending", "Pendiente")
 
+        if hasattr(self, "analyze_button"):
+            if self.analysis_running:
+                self.analyze_button.config(text="Analizando...", state="disabled")
+            elif has_measurements:
+                self.analyze_button.config(text="Reanalizar morfometría", state="normal")
+            elif has_image:
+                self.analyze_button.config(text="Analizar morfometría", state="normal")
+            else:
+                self.analyze_button.config(text="Analizar morfometría", state="disabled")
+
         if hasattr(self, "header_state_label"):
             if has_measurements:
                 self.header_state_label.config(text="Análisis completo", bg=self.colors["success_bg"], fg=self.colors["success_fg"])
@@ -1030,8 +1041,10 @@ class FishMorphologyGUI:
                 self.image_state_label.config(text="Sin imagen", bg=self.colors["pending_bg"], fg=self.colors["pending_fg"])
 
         if hasattr(self, "analysis_hint_label"):
-            if has_measurements:
-                self.analysis_hint_label.config(text="Mediciones disponibles")
+            if self.analysis_running:
+                self.analysis_hint_label.config(text="Calculando nuevamente las medidas")
+            elif has_measurements:
+                self.analysis_hint_label.config(text="Puedes recalcular usando la segmentación actual")
             elif has_segmentation:
                 self.analysis_hint_label.config(text="Segmentación lista para medir")
             elif has_image:

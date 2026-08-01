@@ -84,11 +84,13 @@ restauran automáticamente en la siguiente ejecución.
 - Presionar **“Generar Segmentación”**
 - Visualización de máscara, overlay e IDs
 
-### Análisis morfológico
-- Botón **“Analizar Morfología”**
+### Análisis morfométrico
+- Botón **“Analizar morfometría”**
 - Usa la máscara coloreada
 - Calcula longitudes y profundidad corporal
 - Muestra resultados en tabla e imagen anotada
+- Después del primer cálculo, usar **“Reanalizar morfometría”** para reemplazar las mediciones con un nuevo análisis
+- Si el nuevo análisis falla, se conservan las últimas mediciones válidas
 
 ### Guardar resultados
 - Botón **“Guardar Resultados”**
