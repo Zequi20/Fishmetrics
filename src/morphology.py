@@ -98,23 +98,32 @@ def get_fish_extremes(fish_coords, head_coords, body_coords, fins_coords, orient
     
     return punto_hocico, fin_aleta_caudal, fin_cuerpo, fin_cabeza
 
-def measure_morphology(image_path, show_visualization=True):
+def measure_morphology_with_overlay(
+    image_path,
+    original_image_path=None,
+    cm_per_pixel=1.0,
+    show_visualization=True,
+    annotated_output_path="mediciones_pez.png",
+    overlay_output_path="mediciones_pez_overlay.png",
+):
     """
     Carga una imagen de pez segmentado y calcula sus medidas morfológicas.
-    También genera una imagen con las mediciones dibujadas.
+    Genera las mediciones tanto sobre la máscara como, opcionalmente, sobre
+    la imagen original usada durante la segmentación.
     """
     print(f"DEBUG: Analizando imagen: {image_path}")
+
+    cm_per_pixel = float(cm_per_pixel)
+    if not np.isfinite(cm_per_pixel) or cm_per_pixel <= 0:
+        raise ValueError("cm_per_pixel debe ser un número finito mayor que cero")
     
     # Cargar la imagen
     img = cv2.imread(image_path)
     if img is None:
         print(f"Error: No se pudo cargar la imagen desde {image_path}")
-        return None, None
+        return None, None, None
 
     print(f"DEBUG: Imagen cargada, dimensiones: {img.shape}")
-
-    # Crear una copia para dibujar las mediciones
-    img_visual = img.copy()
 
     # --- 1. Crear máscaras para cada color ---
     # Definir los colores para cada segmento (BGR)
@@ -141,7 +150,7 @@ def measure_morphology(image_path, show_visualization=True):
     if total_pixels == 0:
         print("Error: No se encontraron píxeles segmentados en la imagen.")
         print("Asegúrate de que la imagen tenga segmentación con colores RGB(255,0,0), RGB(0,255,0), RGB(0,0,255)")
-        return None, None
+        return None, None, None
 
     # Encontrar coordenadas de cada segmento
     fish_coords = np.column_stack(np.where(full_fish_mask > 0))
@@ -177,7 +186,7 @@ def measure_morphology(image_path, show_visualization=True):
         )
     except (IndexError, ValueError) as e:
         print(f"Error al encontrar puntos clave: {e}")
-        return None, None
+        return None, None, None
 
     # --- 5. Calcular las mediciones ---
     try:
@@ -214,7 +223,7 @@ def measure_morphology(image_path, show_visualization=True):
 
     except Exception as e:
         print(f"Error al calcular mediciones: {e}")
-        return None, None
+        return None, None, None
 
     # Guardar resultados en un diccionario
     mediciones = {
@@ -226,80 +235,160 @@ def measure_morphology(image_path, show_visualization=True):
 
     # --- 6. Visualizar los resultados ---
     try:
-        # Configuración para la visualización
-        color_linea = (0, 255, 255)  # Amarillo brillante
-        color_punto = (255, 0, 255)  # Magenta brillante
-        color_texto = (0, 255, 255)  # Amarillo brillante para el texto
-        color_contorno = (0, 0, 0)   # Negro para el contorno
-        grosor_linea = 3
-        radio_punto = 6
-        font = cv2.FONT_HERSHEY_DUPLEX
-        font_scale = 0.7
-        grosor_texto = 2
-        grosor_contorno = 5
-        
-        # Longitud Total
-        y_pos = max(10, punto_hocico[1] - 80)
-        cv2.line(img_visual, (punto_hocico[0], y_pos), (fin_aleta_caudal[0], y_pos), color_linea, grosor_linea)
-        cv2.circle(img_visual, punto_hocico, radio_punto, color_punto, -1)
-        cv2.circle(img_visual, fin_aleta_caudal, radio_punto, color_punto, -1)
-        
-        text_total = f'Total: {longitud_total:.1f} px'
-        text_pos = (min(punto_hocico[0], fin_aleta_caudal[0]), max(25, y_pos - 15))
-        draw_text_with_outline(img_visual, text_total, text_pos, font, font_scale, 
-                              color_texto, color_contorno, grosor_texto, grosor_contorno)
-        
-        # Longitud Estándar
-        y_pos = max(50, punto_hocico[1] - 40)
-        cv2.line(img_visual, (punto_hocico[0], y_pos), (fin_cuerpo[0], y_pos), color_linea, grosor_linea)
-        cv2.circle(img_visual, fin_cuerpo, radio_punto, color_punto, -1)
-        
-        text_estandar = f'Estandar: {longitud_estandar:.1f} px'
-        text_pos = (min(punto_hocico[0], fin_cuerpo[0]), max(65, y_pos - 15))
-        draw_text_with_outline(img_visual, text_estandar, text_pos, font, font_scale, 
-                              color_texto, color_contorno, grosor_texto, grosor_contorno)
+        annotation_data = {
+            "punto_hocico": punto_hocico,
+            "fin_aleta_caudal": fin_aleta_caudal,
+            "fin_cuerpo": fin_cuerpo,
+            "fin_cabeza": fin_cabeza,
+            "punto_dorsal": punto_dorsal,
+            "punto_ventral": punto_ventral,
+            "orientation": orientation,
+        }
+        img_visual = draw_morphology_annotations(
+            img,
+            mediciones,
+            annotation_data,
+            cm_per_pixel,
+        )
 
-        # Longitud Cefálica
-        y_pos = min(img.shape[0] - 60, fin_cabeza[1] + 60)
-        cv2.line(img_visual, (punto_hocico[0], y_pos), (fin_cabeza[0], y_pos), color_linea, grosor_linea)
-        cv2.circle(img_visual, fin_cabeza, radio_punto, color_punto, -1)
-        
-        text_cefalica = f'Cefalica: {longitud_cefalica:.1f} px'
-        text_pos = (min(punto_hocico[0], fin_cabeza[0]), min(img.shape[0] - 5, y_pos + 25))
-        draw_text_with_outline(img_visual, text_cefalica, text_pos, font, font_scale, 
-                              color_texto, color_contorno, grosor_texto, grosor_contorno)
 
-        # Profundidad Corporal
-        if profundidad_corporal > 0:
-            cv2.line(img_visual, punto_dorsal, punto_ventral, color_linea, grosor_linea)
-            cv2.circle(img_visual, punto_dorsal, radio_punto, color_punto, -1)
-            cv2.circle(img_visual, punto_ventral, radio_punto, color_punto, -1)
-            
-            text_profundidad = f'Profundidad: {profundidad_corporal:.1f} px'
-            text_pos = (punto_dorsal[0] + 15, punto_dorsal[1] + 60)
-            draw_text_with_outline(img_visual, text_profundidad, text_pos, font, font_scale, 
-                                  color_texto, color_contorno, grosor_texto, grosor_contorno)
-        
-        # Agregar indicador de orientación
-        orientation_text = f'Orientacion: {"Izquierda" if orientation == "left" else "Derecha"}'
-        draw_text_with_outline(img_visual, orientation_text, (10, 30), font, 0.6, 
-                              (255, 255, 0), (0, 0, 0), 2, 4)
-        
         # Mostrar la imagen (si se especifica)
         if show_visualization:
             cv2.imshow('Mediciones Morfologicas', img_visual)
             cv2.waitKey(0)
             cv2.destroyAllWindows()
         
-        # Guardar la imagen con las mediciones
-        cv2.imwrite("mediciones_pez.png", img_visual)
-        
+        # Guardar la vista sobre la máscara.
+        if annotated_output_path and not cv2.imwrite(str(annotated_output_path), img_visual):
+            raise OSError(f"No se pudo guardar {annotated_output_path}")
+
+        # El overlay es opcional para mantener disponibles las mediciones aun
+        # cuando la imagen base haya sido movida o eliminada.
+        overlay_visual = None
+        if original_image_path:
+            try:
+                original_img = cv2.imread(str(original_image_path))
+                if original_img is None:
+                    raise ValueError(
+                        f"No se pudo cargar la imagen original desde {original_image_path}"
+                    )
+
+                if original_img.shape[:2] != img.shape[:2]:
+                    original_img = cv2.resize(
+                        original_img,
+                        (img.shape[1], img.shape[0]),
+                        interpolation=cv2.INTER_AREA,
+                    )
+
+                overlay_visual = draw_morphology_annotations(
+                    original_img,
+                    mediciones,
+                    annotation_data,
+                    cm_per_pixel,
+                )
+                if overlay_output_path and not cv2.imwrite(str(overlay_output_path), overlay_visual):
+                    raise OSError(f"No se pudo guardar {overlay_output_path}")
+            except (OSError, ValueError, cv2.error) as overlay_error:
+                print(f"No se pudo generar el overlay morfométrico: {overlay_error}")
+                overlay_visual = None
+
         print(f"Mediciones calculadas exitosamente (orientación: {orientation}):")
         for nombre, valor in mediciones.items():
-            print(f"  {nombre}: {valor:.1f} píxeles")
+            print(f"  {nombre}: {valor * cm_per_pixel:.2f} cm ({valor:.1f} píxeles)")
 
-        return mediciones, img_visual
+        return mediciones, img_visual, overlay_visual
         
     except Exception as e:
         print(f"Error durante la visualización: {e}")
-        return mediciones, img_visual  # Retornar mediciones aunque falle la visualización
+        return mediciones, None, None
+
+
+def draw_morphology_annotations(base_image, measurements, annotation_data, cm_per_pixel):
+    """Dibuja las guías morfométricas y etiqueta sus valores en centímetros."""
+    img_visual = base_image.copy()
+    punto_hocico = tuple(map(int, annotation_data["punto_hocico"]))
+    fin_aleta_caudal = tuple(map(int, annotation_data["fin_aleta_caudal"]))
+    fin_cuerpo = tuple(map(int, annotation_data["fin_cuerpo"]))
+    fin_cabeza = tuple(map(int, annotation_data["fin_cabeza"]))
+    punto_dorsal = tuple(map(int, annotation_data["punto_dorsal"]))
+    punto_ventral = tuple(map(int, annotation_data["punto_ventral"]))
+    orientation = annotation_data["orientation"]
+
+    color_linea = (0, 255, 255)
+    color_punto = (255, 0, 255)
+    color_texto = (0, 255, 255)
+    color_contorno = (0, 0, 0)
+    grosor_linea = 3
+    radio_punto = 6
+    font = cv2.FONT_HERSHEY_DUPLEX
+    font_scale = 0.7
+    grosor_texto = 2
+    grosor_contorno = 5
+
+    def label(name, short_name):
+        return f"{short_name}: {measurements[name] * cm_per_pixel:.2f} cm"
+
+    # Longitud total
+    y_pos = max(10, punto_hocico[1] - 80)
+    cv2.line(img_visual, (punto_hocico[0], y_pos), (fin_aleta_caudal[0], y_pos), color_linea, grosor_linea)
+    cv2.circle(img_visual, punto_hocico, radio_punto, color_punto, -1)
+    cv2.circle(img_visual, fin_aleta_caudal, radio_punto, color_punto, -1)
+    text_pos = (min(punto_hocico[0], fin_aleta_caudal[0]), max(25, y_pos - 15))
+    draw_text_with_outline(
+        img_visual, label("Longitud Total", "Total"), text_pos, font, font_scale,
+        color_texto, color_contorno, grosor_texto, grosor_contorno,
+    )
+
+    # Longitud estándar
+    y_pos = max(50, punto_hocico[1] - 40)
+    cv2.line(img_visual, (punto_hocico[0], y_pos), (fin_cuerpo[0], y_pos), color_linea, grosor_linea)
+    cv2.circle(img_visual, fin_cuerpo, radio_punto, color_punto, -1)
+    text_pos = (min(punto_hocico[0], fin_cuerpo[0]), max(65, y_pos - 15))
+    draw_text_with_outline(
+        img_visual, label("Longitud Estándar", "Estandar"), text_pos, font, font_scale,
+        color_texto, color_contorno, grosor_texto, grosor_contorno,
+    )
+
+    # Longitud cefálica
+    y_pos = min(img_visual.shape[0] - 60, fin_cabeza[1] + 60)
+    cv2.line(img_visual, (punto_hocico[0], y_pos), (fin_cabeza[0], y_pos), color_linea, grosor_linea)
+    cv2.circle(img_visual, fin_cabeza, radio_punto, color_punto, -1)
+    text_pos = (min(punto_hocico[0], fin_cabeza[0]), min(img_visual.shape[0] - 5, y_pos + 25))
+    draw_text_with_outline(
+        img_visual, label("Longitud Cefálica", "Cefalica"), text_pos, font, font_scale,
+        color_texto, color_contorno, grosor_texto, grosor_contorno,
+    )
+
+    # Profundidad corporal
+    if measurements["Profundidad Corporal"] > 0:
+        cv2.line(img_visual, punto_dorsal, punto_ventral, color_linea, grosor_linea)
+        cv2.circle(img_visual, punto_dorsal, radio_punto, color_punto, -1)
+        cv2.circle(img_visual, punto_ventral, radio_punto, color_punto, -1)
+        text_pos = (punto_dorsal[0] + 15, punto_dorsal[1] + 60)
+        draw_text_with_outline(
+            img_visual, label("Profundidad Corporal", "Profundidad"), text_pos, font, font_scale,
+            color_texto, color_contorno, grosor_texto, grosor_contorno,
+        )
+
+    orientation_text = f'Orientacion: {"Izquierda" if orientation == "left" else "Derecha"}'
+    draw_text_with_outline(
+        img_visual, orientation_text, (10, 30), font, 0.6,
+        (255, 255, 0), (0, 0, 0), 2, 4,
+    )
+    return img_visual
+
+
+def measure_morphology(
+    image_path,
+    show_visualization=True,
+    cm_per_pixel=1.0,
+    annotated_output_path="mediciones_pez.png",
+):
+    """API compatible para generar la vista anotada sobre la máscara."""
+    measurements, annotated_image, _ = measure_morphology_with_overlay(
+        image_path,
+        cm_per_pixel=cm_per_pixel,
+        show_visualization=show_visualization,
+        annotated_output_path=annotated_output_path,
+    )
+    return measurements, annotated_image

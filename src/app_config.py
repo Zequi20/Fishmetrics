@@ -9,6 +9,9 @@ class AppConfig:
         "appearance": {
             "theme": "light",
         },
+        "paths": {
+            "last_image_directory": "",
+        },
     }
 
     def __init__(self, path=None):

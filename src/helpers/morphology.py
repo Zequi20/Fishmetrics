@@ -1,6 +1,10 @@
 import os
 from tkinter import messagebox
-from morphology import measure_morphology
+from morphology import measure_morphology_with_overlay
+
+
+MEASUREMENT_MASK_PATH = "mediciones_pez.png"
+MEASUREMENT_OVERLAY_PATH = "mediciones_pez_overlay.png"
 
 class MorphologyHelper:
     def __init__(self, gui):
@@ -41,18 +45,28 @@ class MorphologyHelper:
             self.gui._set_step_state("analysis", "active", "Midiendo")
             self.gui.root.update()
             
-            new_measurements, new_annotated_image = measure_morphology(
-                str(mask_path), show_visualization=False
+            new_measurements, new_annotated_image, new_overlay_image = measure_morphology_with_overlay(
+                str(mask_path),
+                original_image_path=self.gui.get_processed_image_path(),
+                cm_per_pixel=self.gui.pixel_to_cm_ratio.get(),
+                show_visualization=False,
+                annotated_output_path=MEASUREMENT_MASK_PATH,
+                overlay_output_path=MEASUREMENT_OVERLAY_PATH,
             )
             
-            if new_measurements:
+            if new_measurements and new_annotated_image is not None:
                 self.gui.measurements = new_measurements
                 self.gui.annotated_image = new_annotated_image
+                self.gui.annotated_overlay_image = new_overlay_image
+                self.gui.measurement_view_paths = {
+                    "mask": MEASUREMENT_MASK_PATH,
+                    "overlay": MEASUREMENT_OVERLAY_PATH,
+                }
                 self.gui.results_helper.display_results()
-                
-                annotated_path = "mediciones_pez.png"
-                if os.path.exists(annotated_path):
-                    self.gui.display_image(annotated_path)
+
+                self._sync_measurement_view_buttons()
+                if os.path.exists(MEASUREMENT_MASK_PATH):
+                    self.gui.display_image(MEASUREMENT_MASK_PATH)
                 
                 completed_text = "Morfometría recalculada" if is_reanalysis else "Análisis morfológico completado"
                 self.gui.set_status(completed_text, kind="success", toast=True)
@@ -99,3 +113,68 @@ class MorphologyHelper:
             self.gui.analysis_running = False
             self.gui.set_busy(False)
             self.gui._sync_flow_state()
+
+    def show_measurement_result(self, result_type):
+        """Muestra las mediciones sobre la máscara o sobre la imagen original."""
+        view_path = self.gui.measurement_view_paths.get(result_type)
+        if view_path and os.path.exists(view_path):
+            self.gui.display_image(view_path)
+            description = "la imagen original" if result_type == "overlay" else "la máscara"
+            self.gui.set_status(f"Mostrando mediciones en cm sobre {description}", kind="info")
+            return
+
+        self.gui.show_error(
+            "No se pudo mostrar la vista de mediciones",
+            "La imagen anotada ya no está disponible. Reanaliza la morfometría para generarla nuevamente.",
+            details=f"Vista solicitada: {result_type}\nRuta esperada: {view_path or 'no informada'}",
+        )
+
+    def refresh_visualizations(self):
+        """Regenera los rótulos cuando cambia la escala sin alterar el flujo."""
+        if not self.gui.measurements or not self.gui.segmentation_results:
+            return
+
+        mask_path = self.gui.segmentation_results.get("mask_color")
+        if not mask_path or not mask_path.exists():
+            return
+
+        current_view = None
+        for result_type, view_path in self.gui.measurement_view_paths.items():
+            if str(self.gui.current_display_path) == str(view_path):
+                current_view = result_type
+                break
+
+        measurements, annotated_image, overlay_image = measure_morphology_with_overlay(
+            str(mask_path),
+            original_image_path=self.gui.get_processed_image_path(),
+            cm_per_pixel=self.gui.pixel_to_cm_ratio.get(),
+            show_visualization=False,
+            annotated_output_path=MEASUREMENT_MASK_PATH,
+            overlay_output_path=MEASUREMENT_OVERLAY_PATH,
+        )
+        if not measurements or annotated_image is None:
+            return
+
+        self.gui.measurements = measurements
+        self.gui.annotated_image = annotated_image
+        self.gui.annotated_overlay_image = overlay_image
+        self.gui.measurement_view_paths = {
+            "mask": MEASUREMENT_MASK_PATH,
+            "overlay": MEASUREMENT_OVERLAY_PATH,
+        }
+        self._sync_measurement_view_buttons()
+        if current_view:
+            self.show_measurement_result(current_view)
+
+    def _sync_measurement_view_buttons(self):
+        mask_available = os.path.exists(self.gui.measurement_view_paths.get("mask", ""))
+        overlay_available = (
+            self.gui.annotated_overlay_image is not None
+            and os.path.exists(self.gui.measurement_view_paths.get("overlay", ""))
+        )
+        self.gui.view_measurements_mask_button.config(
+            state="normal" if mask_available else "disabled"
+        )
+        self.gui.view_measurements_overlay_button.config(
+            state="normal" if overlay_available else "disabled"
+        )

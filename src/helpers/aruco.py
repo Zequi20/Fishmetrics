@@ -62,6 +62,7 @@ class ArucoHelper:
                 
                 # Actualizar resultados si ya hay mediciones
                 if self.gui.measurements:
+                    self.gui.morphology_helper.refresh_visualizations()
                     self.gui.results_helper.display_results()
                 
                 correction_text = " (con corrección)" if self.gui.undistortion_enabled.get() else ""

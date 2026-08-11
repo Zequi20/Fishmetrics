@@ -51,8 +51,9 @@ python src/main.py
 ```
 
 Al iniciar por primera vez se crea `config.ini` en la raíz del proyecto. Las
-preferencias personales, como el tema claro u oscuro, se guardan allí y se
-restauran automáticamente en la siguiente ejecución.
+preferencias personales, como el tema claro u oscuro y la última carpeta usada
+para abrir una imagen, se guardan allí y se restauran automáticamente en la
+siguiente ejecución.
 
 ---
 
@@ -60,6 +61,7 @@ restauran automáticamente en la siguiente ejecución.
 
 ### Cargar imagen
 - Botón **“Seleccionar Imagen”**
+- El selector vuelve a abrir la última carpeta utilizada
 
 ### Corrección de distorsión (opcional)
 - Habilitar la casilla de corrección
@@ -88,14 +90,15 @@ restauran automáticamente en la siguiente ejecución.
 - Botón **“Analizar morfometría”**
 - Usa la máscara coloreada
 - Calcula longitudes y profundidad corporal
-- Muestra resultados en tabla e imagen anotada
+- Muestra resultados en tabla e imagen anotada, con los rótulos expresados en cm
+- Permite alternar las mediciones entre la máscara y un overlay sobre la imagen original
 - Después del primer cálculo, usar **“Reanalizar morfometría”** para reemplazar las mediciones con un nuevo análisis
 - Si el nuevo análisis falla, se conservan las últimas mediciones válidas
 
 ### Guardar resultados
-- Botón **“Guardar Resultados”**
-- Exporta **TXT** con:
-  - Medidas (px y cm)
+- Botón **“Exportar YAML”**
+- Exporta **YAML** con:
+  - Cada medida en m, cm, mm y píxeles
   - Metadatos de escala y corrección
 
 ---
@@ -125,7 +128,9 @@ python seg/infer2_seg.py   --ckpt seg/best_miou_V5.pth   --input ruta/a/imagen.j
 - **Profundidad Corporal**  
   (máxima distancia dorsal–ventral en el cuerpo)
 
-Las mediciones se muestran en **píxeles** y se convierten a **cm** según la escala actual.
+La tabla muestra una sola unidad a la vez, seleccionable entre **m, cm, mm y
+píxeles** (cm por defecto). En las imágenes anotadas, los rótulos se muestran
+en **cm** según la escala actual.
 
 ---
 

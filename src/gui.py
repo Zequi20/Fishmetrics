@@ -8,7 +8,7 @@ from undistortion import CameraUndistortion
 from helpers.segmentation import SegmentationHelper
 from helpers.aruco import ArucoHelper
 from helpers.image_display import ImageDisplayHelper
-from helpers.results import ResultsHelper
+from helpers.results import MEASUREMENT_DISPLAY_UNITS, ResultsHelper
 from helpers.undistortion import UndistortionHelper
 from helpers.morphology import MorphologyHelper
 from helpers.scale import ScaleHelper
@@ -31,7 +31,10 @@ class FishMorphologyGUI:
         self.current_display_path = None
         self.measurements = None
         self.annotated_image = None
+        self.annotated_overlay_image = None
+        self.measurement_view_paths = {}
         self.pixel_to_cm_ratio = tk.DoubleVar(value=1.0)
+        self.measurement_unit_var = tk.StringVar(value="cm")
         self.segmentation_results = None
         self.aruco_detection = None
 
@@ -743,6 +746,7 @@ class FishMorphologyGUI:
 
     def _create_analysis_frame(self, parent):
         content = self._create_step_card(parent, 5, "analysis", 5, "Análisis")
+        content.columnconfigure((0, 1), weight=1)
 
         self.analyze_button = ttk.Button(
             content,
@@ -751,10 +755,32 @@ class FishMorphologyGUI:
             state="disabled",
             style="Primary.TButton",
         )
-        self.analyze_button.grid(row=0, column=0, sticky=(tk.W, tk.E))
+        self.analyze_button.grid(row=0, column=0, columnspan=2, sticky=(tk.W, tk.E))
 
         self.analysis_hint_label = ttk.Label(content, text="Esperando segmentación", style="Muted.TLabel")
-        self.analysis_hint_label.grid(row=1, column=0, sticky=tk.W, pady=(8, 0))
+        self.analysis_hint_label.grid(row=1, column=0, columnspan=2, sticky=tk.W, pady=(8, 0))
+
+        self.view_measurements_mask_button = ttk.Button(
+            content,
+            text="Sobre máscara",
+            command=lambda: self.morphology_helper.show_measurement_result("mask"),
+            state="disabled",
+            style="Compact.TButton",
+        )
+        self.view_measurements_mask_button.grid(
+            row=2, column=0, sticky=(tk.W, tk.E), padx=(0, 4), pady=(10, 0)
+        )
+
+        self.view_measurements_overlay_button = ttk.Button(
+            content,
+            text="Sobre original",
+            command=lambda: self.morphology_helper.show_measurement_result("overlay"),
+            state="disabled",
+            style="Compact.TButton",
+        )
+        self.view_measurements_overlay_button.grid(
+            row=2, column=1, sticky=(tk.W, tk.E), padx=(4, 0), pady=(10, 0)
+        )
 
     def _create_image_workspace(self, parent):
         image_frame = ttk.Frame(parent, style="Panel.TFrame", padding=14)
@@ -834,30 +860,45 @@ class FishMorphologyGUI:
         table_shell = ttk.Frame(results_frame, style="PanelInner.TFrame")
         table_shell.grid(row=3, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
         table_shell.columnconfigure(0, weight=1)
-        table_shell.rowconfigure(1, weight=1)
+        table_shell.rowconfigure(2, weight=1)
 
         ttk.Label(table_shell, text="Resultados", style="Section.TLabel").grid(row=0, column=0, sticky=tk.W, pady=(0, 8))
 
-        columns = ("Medición", "Píxeles", "Centímetros")
+        unit_row = ttk.Frame(table_shell, style="PanelInner.TFrame")
+        unit_row.grid(row=1, column=0, sticky=(tk.W, tk.E), pady=(0, 8))
+        unit_row.columnconfigure(1, weight=1)
+        ttk.Label(unit_row, text="Unidad", style="Muted.TLabel").grid(row=0, column=0, sticky=tk.W, padx=(0, 8))
+        self.measurement_unit_combo = ttk.Combobox(
+            unit_row,
+            textvariable=self.measurement_unit_var,
+            values=MEASUREMENT_DISPLAY_UNITS,
+            state="readonly",
+            width=12,
+        )
+        self.measurement_unit_combo.grid(row=0, column=1, sticky=tk.E)
+        self.measurement_unit_combo.bind(
+            "<<ComboboxSelected>>",
+            lambda _event: self.results_helper.display_results(),
+        )
+
+        columns = ("Medición", "Valor")
         self.results_tree = ttk.Treeview(table_shell, columns=columns, show="headings", height=12)
         self.results_tree.heading("Medición", text="Medición")
-        self.results_tree.heading("Píxeles", text="Píxeles")
-        self.results_tree.heading("Centímetros", text="Centímetros")
-        self.results_tree.column("Medición", width=142, anchor=tk.W)
-        self.results_tree.column("Píxeles", width=86, anchor=tk.E)
-        self.results_tree.column("Centímetros", width=104, anchor=tk.E)
+        self.results_tree.heading("Valor", text="Valor (cm)")
+        self.results_tree.column("Medición", width=185, anchor=tk.W)
+        self.results_tree.column("Valor", width=115, anchor=tk.E)
         self.results_tree.tag_configure("odd", background=self.colors["table_alt"], foreground=self.colors["text"])
         self.results_tree.tag_configure("even", background=self.colors["table"], foreground=self.colors["text"])
 
-        self.results_tree.grid(row=1, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
+        self.results_tree.grid(row=2, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
 
         tree_scrollbar = ttk.Scrollbar(table_shell, orient="vertical", command=self.results_tree.yview)
-        tree_scrollbar.grid(row=1, column=1, sticky=(tk.N, tk.S))
+        tree_scrollbar.grid(row=2, column=1, sticky=(tk.N, tk.S))
         self.results_tree.configure(yscrollcommand=tree_scrollbar.set)
 
         self.save_button = ttk.Button(
             results_frame,
-            text="Exportar resultados",
+            text="Exportar YAML",
             command=self.results_helper.save_results,
             state="disabled",
             style="Primary.TButton",
@@ -1077,10 +1118,11 @@ class FishMorphologyGUI:
         filename = filedialog.askopenfilename(
             title="Seleccionar imagen de pez",
             filetypes=file_types,
-            initialdir=os.path.dirname(os.path.abspath(__file__)),
+            initialdir=self._get_initial_image_directory(),
         )
 
         if filename:
+            self._remember_image_directory(filename)
             self.current_image_path = filename
             basename = os.path.basename(filename)
 
@@ -1105,6 +1147,30 @@ class FishMorphologyGUI:
                 toast=True,
             )
             self._sync_flow_state()
+
+    def _get_initial_image_directory(self):
+        """Obtiene la última carpeta válida usada para seleccionar imágenes."""
+        configured_directory = self.config.get(
+            "paths",
+            "last_image_directory",
+            fallback="",
+        ).strip()
+        if configured_directory:
+            resolved_directory = os.path.abspath(os.path.expanduser(configured_directory))
+            if os.path.isdir(resolved_directory):
+                return resolved_directory
+
+        return os.path.dirname(os.path.abspath(__file__))
+
+    def _remember_image_directory(self, filename):
+        """Persiste la carpeta de la imagen elegida sin interrumpir su carga."""
+        image_directory = os.path.dirname(os.path.abspath(filename))
+        try:
+            self.config.set("paths", "last_image_directory", image_directory)
+        except OSError as error:
+            self.root.after_idle(
+                lambda error=error: self._show_config_write_error(error)
+            )
 
     def get_processed_image_path(self):
         """

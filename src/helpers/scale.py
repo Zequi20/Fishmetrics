@@ -24,6 +24,7 @@ class ScaleHelper:
             self.gui.aruco_status_label.config(text="Escala manual activa")
             
             if self.gui.measurements:
+                self.gui.morphology_helper.refresh_visualizations()
                 self.gui.results_helper.display_results()
                 
             self.gui.set_status(f"Escala manual aplicada: {pixels} píxeles = {cm} cm", kind="success", toast=True)
