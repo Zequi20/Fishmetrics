@@ -11,6 +11,7 @@ from helpers.results import (
     convert_measurement,
     format_measurement,
 )
+from undistortion import CameraUndistortion
 
 
 class Value:
@@ -64,6 +65,36 @@ class ResultsHelperTests(unittest.TestCase):
 
         total = exported["mediciones"][0]["valores"]
         self.assertEqual(total, {"m": 0.2, "cm": 20.0, "mm": 200.0, "pixeles": 400.0})
+
+    def test_yaml_export_records_radial_and_flatport_metadata(self):
+        undistorter = CameraUndistortion()
+        self.assertTrue(
+            undistorter.load_calibration_from_yaml(
+                model="RADIAL",
+                parameters=[1000, 500, 250, 0.1, -0.05],
+                image_size=(1000, 500),
+                non_svp_model="FLATPORT",
+                non_svp_parameters=[0, 0, 1, 0.2, 0.004, 1, 1.52, 1.333],
+            )
+        )
+        gui = SimpleNamespace(
+            undistortion_enabled=Value(True),
+            undistortion_alpha=Value(0.5),
+            undistorter=undistorter,
+        )
+
+        exported = ResultsHelper(gui)._distortion_export_data()
+
+        self.assertEqual(exported["modelo_camara"], "RADIAL")
+        self.assertEqual(
+            exported["coeficientes_distorsion"],
+            {"k1": 0.1, "k2": -0.05, "p1": 0.0, "p2": 0.0, "k3": 0.0},
+        )
+        self.assertEqual(exported["tamano_calibracion_px"], {"ancho": 1000, "alto": 500})
+        self.assertEqual(exported["modelo_refractivo"]["modelo"], "FLATPORT")
+        self.assertFalse(
+            exported["modelo_refractivo"]["correccion_2d_aplicada"]
+        )
 
 
 if __name__ == "__main__":

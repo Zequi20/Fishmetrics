@@ -139,10 +139,16 @@ en **cm** según la escala actual.
 - ArUco esperado: diccionario **4x4_50**
 - La longitud real de un lado es obligatoria y se ingresa en la interfaz
 - Medir el cuadrado de borde exterior a borde exterior; no se asume un tamaño predeterminado
-- Para **SIMPLE_PINHOLE vía YAML**:
-  - `model: SIMPLE_PINHOLE`
-  - Parámetros: `[f, cx, cy]`
-  - Tamaño de imagen requerido
+- Modelos de calibración admitidos vía YAML:
+  - `SIMPLE_PINHOLE`: parámetros `[f, cx, cy]`
+  - `RADIAL`: parámetros `[f, cx, cy, k1, k2]`
+  - `width` y `height` son obligatorios; los intrínsecos se escalan si la
+    imagen procesada tiene otra resolución
+- Los YAML submarinos pueden incluir `non_svp_model: FLATPORT` y sus ocho
+  `non_svp_parameters`. FishMetrics conserva y exporta esos datos, pero la
+  rectificación 2D aplica solamente `k1` y `k2`: la refracción de un puerto
+  plano no tiene una corrección exacta única sin conocer la profundidad de la
+  escena.
 - JSON de calibración por defecto: `data.json`
   - Puede cargarse otro archivo
 

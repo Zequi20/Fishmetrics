@@ -176,11 +176,34 @@ class ResultsHelper:
             calibration = self.gui.undistorter.get_calibration_info()
             data.update({
                 "alpha": float(self.gui.undistortion_alpha.get()),
+                "modelo_camara": calibration.get("camera_model"),
                 "distancia_focal_px": {
                     "fx": float(calibration["focal_length_x"]),
                     "fy": float(calibration["focal_length_y"]),
                 },
+                "coeficientes_distorsion": {
+                    "k1": float(calibration["distortion_k1"]),
+                    "k2": float(calibration["distortion_k2"]),
+                    "p1": float(calibration["distortion_p1"]),
+                    "p2": float(calibration["distortion_p2"]),
+                    "k3": float(calibration["distortion_k3"]),
+                },
             })
+            if calibration.get("image_size"):
+                width, height = calibration["image_size"]
+                data["tamano_calibracion_px"] = {
+                    "ancho": int(width),
+                    "alto": int(height),
+                }
+            if calibration.get("non_svp_model"):
+                parameters = calibration.get("non_svp_parameters")
+                data["modelo_refractivo"] = {
+                    "modelo": calibration["non_svp_model"],
+                    "parametros": [float(value) for value in parameters],
+                    "correccion_2d_aplicada": bool(
+                        calibration.get("non_svp_correction_applied", False)
+                    ),
+                }
         return data
 
     def _scale_export_data(self, cm_per_pixel):

@@ -2,6 +2,13 @@ import os
 from tkinter import filedialog, messagebox
 import yaml
 
+
+YAML_CAMERA_MODELS = {
+    "SIMPLE_PINHOLE": 3,
+    "RADIAL": 5,
+}
+
+
 class UndistortionHelper:
     def __init__(self, gui):
         self.gui = gui
@@ -47,41 +54,61 @@ class UndistortionHelper:
                 with open(filename, 'r') as file:
                     calibration_data = yaml.safe_load(file)
                 
-                # Extract parameters from YAML
-                model = calibration_data.get('model')
+                if not isinstance(calibration_data, dict):
+                    raise ValueError("El contenido raíz del YAML debe ser un objeto")
+
+                # Extraer parámetros del YAML de COLMAP.
+                raw_model = calibration_data.get('model')
+                model = str(raw_model).strip().upper() if raw_model else None
                 parameters = calibration_data.get('parameters', [])
                 width = calibration_data.get('width')
                 height = calibration_data.get('height')
-                
-                if model != "SIMPLE_PINHOLE" or not parameters or len(parameters) < 3:
+
+                expected_parameters = YAML_CAMERA_MODELS.get(model)
+                if (
+                    expected_parameters is None
+                    or not isinstance(parameters, list)
+                    or len(parameters) != expected_parameters
+                    or width is None
+                    or height is None
+                ):
                     self.gui.set_status("Formato de calibración no compatible", kind="danger", toast=True)
                     self.gui.show_error(
                         "Archivo de calibración no compatible",
-                        "El archivo no contiene una calibración que FishMetrics pueda usar. Selecciona un YAML con el modelo SIMPLE_PINHOLE y sus parámetros de cámara.",
+                        "El archivo no contiene una calibración que FishMetrics pueda usar. Selecciona un YAML SIMPLE_PINHOLE [f, cx, cy] o RADIAL [f, cx, cy, k1, k2], con ancho y alto.",
                         details=(
-                            f"Archivo: {filename}\nModelo recibido: {model!r}\n"
+                            f"Archivo: {filename}\nModelo recibido: {raw_model!r}\n"
                             f"Cantidad de parámetros: {len(parameters) if isinstance(parameters, list) else 'formato no válido'}"
                         ),
                     )
                     return
-                
-                # Extract the camera parameters
-                f = parameters[0]  # focal length
-                cx = parameters[1]  # principal point x
-                cy = parameters[2]  # principal point y
-                
-                # Set undistorter parameters
-                # This requires modification to your undistorter class to accept these parameters
+
                 success = self.gui.undistorter.load_calibration_from_yaml(
                     model=model,
-                    focal_length=f,
-                    principal_point=(cx, cy),
-                    image_size=(width, height)
+                    parameters=parameters,
+                    image_size=(width, height),
+                    non_svp_model=calibration_data.get('non_svp_model'),
+                    non_svp_parameters=calibration_data.get('non_svp_parameters'),
                 )
-                
+
                 if success:
-                    self.gui.set_status(f"Calibración YAML cargada desde {os.path.basename(filename)}", kind="success", toast=True)
-                    messagebox.showinfo("Éxito", "Calibración YAML cargada correctamente")
+                    refractive_model = calibration_data.get('non_svp_model')
+                    if str(refractive_model).strip().upper() in ('', 'NONE'):
+                        refractive_model = None
+                    status_suffix = f" + {refractive_model}" if refractive_model else ""
+                    self.gui.set_status(
+                        f"Calibración {model}{status_suffix} cargada desde {os.path.basename(filename)}",
+                        kind="success",
+                        toast=True,
+                    )
+                    success_message = f"Calibración {model} cargada correctamente."
+                    if refractive_model:
+                        success_message += (
+                            f"\n\nLos parámetros {refractive_model} se conservaron como "
+                            "metadatos. La corrección 2D aplica la distorsión radial; la "
+                            "refracción del puerto depende también de la profundidad de la escena."
+                        )
+                    messagebox.showinfo("Éxito", success_message)
                 else:
                     self.gui.set_status("No se pudo cargar el archivo de calibración", kind="danger", toast=True)
                     self.gui.show_error(
@@ -106,8 +133,10 @@ class UndistortionHelper:
             messagebox.showwarning("Calibración", "No hay parámetros de calibración cargados")
             return
         
+        image_size = info.get('image_size') or 'No definido'
         info_text = f"""Información de Calibración:
 
+Modelo de cámara: {info.get('camera_model', 'DESCONOCIDO')}
 Distancia focal X: {info['focal_length_x']:.2f}
 Distancia focal Y: {info['focal_length_y']:.2f}
 Punto principal: ({info['principal_point'][0]:.1f}, {info['principal_point'][1]:.1f})
@@ -119,7 +148,14 @@ p1: {info['distortion_p1']:.4f}
 p2: {info['distortion_p2']:.4f}
 k3: {info['distortion_k3']:.4f}
 
-Tamaño de imagen: {info.get('image_size', 'No definido')}"""
+Tamaño de imagen: {image_size}"""
+
+        if info.get('non_svp_model'):
+            info_text += (
+                f"\n\nModelo refractivo: {info['non_svp_model']}"
+                "\nEstado: parámetros registrados; la corrección 2D aplica "
+                "solamente la componente radial."
+            )
         
         messagebox.showinfo("Información de Calibración", info_text)
     
